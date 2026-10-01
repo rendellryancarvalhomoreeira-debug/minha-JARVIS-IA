@@ -31,9 +31,9 @@ if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto.
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
-        try:
+       try:
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 messages=st.session_state.messages,
                 temperature=0.7
             )
