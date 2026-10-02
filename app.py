@@ -7,8 +7,18 @@ st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 # Inicializa o cliente da Groq
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Modelo oficial, atualizado e ativo na Groq
-MODEL_NAME = "llama-3.3-70b-versatile"
+# OBTÉM O MODELO AUTOMATICAMENTE DA GROQ (Zero erros de digitação/hífen)
+@st.cache_data(ttl=3600)
+def get_working_model():
+    try:
+        models = client.models.list()
+        # Retorna o primeiro modelo ativo encontrado na tua conta
+        return models.data[0].id
+    except Exception:
+        # Fallback usando ASCII limpo caso haja falha de conexão inicial
+        return "llama" + chr(45) + "3.3" + chr(45) + "70b" + chr(45) + "versatile"
+
+MODEL_NAME = get_working_model()
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
 if "chats" not in st.session_state:
@@ -23,7 +33,7 @@ if "active_chat_id" not in st.session_state:
 # 2. BARRA LATERAL (SIDEBAR)
 with st.sidebar:
     st.title("🤖 JARVIS AI")
-    st.caption(f"Modelo: `{MODEL_NAME}`")
+    st.caption(f"Modelo detetado: `{MODEL_NAME}`")
     
     if st.button("➕ Nova conversa", use_container_width=True):
         new_id = f"Conversa {len(st.session_state.chats) + 1}"
