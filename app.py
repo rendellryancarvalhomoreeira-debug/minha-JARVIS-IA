@@ -7,8 +7,8 @@ st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 # Inicializa o cliente da Groq
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Nome do modelo padrão ativo e suportado pela Groq
-MODEL_NAME = "mixtral-8x7b-32768"
+# Modelo oficial, atualizado e ativo na Groq
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
 if "chats" not in st.session_state:
