@@ -13,7 +13,7 @@ if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto.
     with st.chat_message("assistant"):
         try:
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3. 1-8b-instant",
                 messages=[
                     {"role": "system", "content": "Você é o JARVIS, um assistente virtual prestativo."},
                     {"role": "user", "content": prompt}
