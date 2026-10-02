@@ -4,11 +4,11 @@ from groq import Groq
 # Configuração da página
 st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 
-# Inicializa o cliente da Groq usando a chave dos Secrets
+# Inicializa o cliente da Groq
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Usando um modelo garantido e sem hífens problemáticos na versão
-MODEL_NAME = "llama-3.3-70b-versatile"
+# Nome do modelo padrão ativo e suportado pela Groq
+MODEL_NAME = "llama3-8b-8192"
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
 if "chats" not in st.session_state:
@@ -23,6 +23,7 @@ if "active_chat_id" not in st.session_state:
 # 2. BARRA LATERAL (SIDEBAR)
 with st.sidebar:
     st.title("🤖 JARVIS AI")
+    st.caption(f"Modelo: `{MODEL_NAME}`")
     
     if st.button("➕ Nova conversa", use_container_width=True):
         new_id = f"Conversa {len(st.session_state.chats) + 1}"
