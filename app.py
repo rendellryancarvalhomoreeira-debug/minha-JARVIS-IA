@@ -4,10 +4,11 @@ from groq import Groq
 # Configuração da página
 st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 
-# Inicializa o cliente da Groq
+# Inicializa o cliente da Groq usando a chave dos Secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Montagem da string sem usar hífens diretos no texto
+# MÉTODO ANTI-CORRUPÇÃO:
+# Montamos o nome usando chr(45) para garantir o hífen ASCII exato
 MODEL_NAME = "llama" + chr(45) + "3.1" + chr(45) + "8b" + chr(45) + "instant"
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
