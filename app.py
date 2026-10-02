@@ -1,95 +1,81 @@
 import streamlit as st
 from groq import Groq
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from gnews import GNews
-import os
 
-st.set_page_config(page_title="JARVIS - Assistente IA", page_icon="🤖")
-st.title("🤖 JARVIS AI")
+# Configuração da página
+st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 
-# Tenta ler a chave dos Secrets (Streamlit Cloud). Se não encontrar, usa a chave direta
-try:
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-except Exception:
-    GROQ_API_KEY = "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"
+# Inicializa o cliente da Groq usando a chave dos Secrets
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-client = Groq(api_key=GROQ_API_KEY)
+MODEL_NAME = "llama-3.1-8b-instant"
 
-# Leitor de notícias focado em conteúdo do Brasil
-google_news = GNews(language='pt', country='BR', period='1d', max_results=5)
+# 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
+if "chats" not in st.session_state:
+    st.session_state.chats = {}  # Guarda todas as conversas: {id: [mensagens]}
 
-# Seleção automática do modelo ativo na Groq
-try:
-    modelos_disponiveis = [m.id for m in client.models.list().data]
-    modelos_validos = [
-        m for m in modelos_disponiveis
-        if not any(termo in m.lower() for termo in ["guard", "whisper", "vision", "embed", "orpheus", "safetensors"])
+if "active_chat_id" not in st.session_state:
+    st.session_state.active_chat_id = "Conversa 1"
+    st.session_state.chats["Conversa 1"] = [
+        {"role": "system", "content": "Você é o JARVIS, um assistente virtual prestativo, inteligente e amigável."}
     ]
-    MODELO = next((m for m in modelos_validos if "llama-3.3" in m.lower() or "llama3" in m.lower()), modelos_validos[0])
-except Exception:
-    MODELO = "llama-3.3-70b-versatile"
 
-def buscar_na_web(query):
-    try:
-        if any(palavra in query.lower() for palavra in ["noticia", "notícias", "hoje", "manchete", "acontecendo"]):
-            noticias = google_news.get_top_news()
-        else:
-            noticias = google_news.get_news(query)
+# 2. BARRA LATERAL (SIDEBAR)
+with st.sidebar:
+    st.title("🤖 JARVIS AI")
+    
+    # Botão para criar uma nova conversa
+    if st.button("➕ Nova conversa", use_container_width=True):
+        new_id = f"Conversa {len(st.session_state.chats) + 1}"
+        st.session_state.chats[new_id] = [
+            {"role": "system", "content": "Você é o JARVIS, um assistente virtual prestativo, inteligente e amigável."}
+        ]
+        st.session_state.active_chat_id = new_id
+        st.rerun()
 
-        if not noticias:
-            return "Nenhuma notícia recente foi encontrada para esta busca."
+    st.markdown("---")
+    st.subheader("Recentes")
+    
+    # Lista todas as conversas salvas na barra lateral
+    for chat_id in list(st.session_state.chats.keys()):
+        # Destaca a conversa selecionada
+        button_label = f"💬 {chat_id}"
+        if st.button(button_label, key=chat_id, use_container_width=True):
+            st.session_state.active_chat_id = chat_id
+            st.rerun()
 
-        resultados = []
-        for n in noticias[:4]:
-            titulo = n.get('title', '')
-            descricao = n.get('description', '')
-            fonte = n.get('publisher', {}).get('title', 'Fonte')
-            resultados.append(f"- [{fonte}] {titulo}: {descricao}")
+# 3. ÁREA PRINCIPAL DO CHAT
+current_chat_id = st.session_state.active_chat_id
+st.title(f"🤖 JARVIS AI - ({current_chat_id})")
 
-        return "\n".join(resultados)
-    except Exception as e:
-        return f"Erro ao buscar notícias: {e}"
+# Pega as mensagens da conversa atual
+messages = st.session_state.chats[current_chat_id]
 
-fuso_br = ZoneInfo("America/Sao_Paulo")
-agora = datetime.now(fuso_br).strftime("%d/%m/%Y às %H:%M:%S")
-
-prompt_sistema = (
-    "Você é o JARVIS, um assistente pessoal inteligente, prestativo e bem-humorado. "
-    f"A data e hora atuais exatas no Brasil são: {agora}. "
-    "Sempre que receber dados de notícias e jogos no contexto, resuma-os com clareza para o usuário."
-)
-
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": prompt_sistema}]
-
-for message in st.session_state.messages:
+# Exibe o histórico de mensagens da conversa selecionada
+for message in messages:
     if message["role"] != "system":
         with st.chat_message(message["role"]):
-            st.write(message["content"])
+            st.markdown(message["content"])
 
+# 4. ENTRADA E PROCESSAMENTO
 if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto..."):
+    # Exibe a pergunta na tela e salva no chat atual
     with st.chat_message("user"):
-        st.write(prompt)
-    
-    mensagens_para_envio = list(st.session_state.messages)
-    
-    with st.chat_message("assistant"):
-        with st.spinner("Buscando informações em tempo real..."):
-            dados_web = buscar_na_web(prompt)
-            prompt_com_contexto = f"Pergunta do usuário: {prompt}\n\nNotícias e dados em tempo real:\n{dados_web}"
-            mensagens_para_envio.append({"role": "user", "content": prompt_com_contexto})
+        st.markdown(prompt)
+    messages.append({"role": "user", "content": prompt})
 
-            try:
-                response = client.chat.completions.create(
-                    model=MODELO,
-                    messages=mensagens_para_envio,
-                    max_tokens=600
-                )
-                resposta_texto = response.choices[0].message.content
-                st.write(resposta_texto)
-                
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                st.session_state.messages.append({"role": "assistant", "content": resposta_texto})
-            except Exception as e:
-                st.error(f"⚠️ Erro ao gerar resposta: {e}")
+    # Resposta da IA
+    with st.chat_message("assistant"):
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.7
+            )
+            response = completion.choices[0].message.content
+            st.markdown(response)
+            
+            # Salva a resposta no histórico da conversa atual
+            messages.append({"role": "assistant", "content": response})
+            
+        except Exception as e:
+            st.error(f"Erro ao gerar resposta: {e}")
