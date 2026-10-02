@@ -33,7 +33,7 @@ if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto.
     with st.chat_message("assistant"):
         try:
             completion = client.chat.completions.create(
-                model="gemma2-9b-it",
+                model="llama-3.1-8b-instant",
                 messages=st.session_state.messages,
                 temperature=0.7
             )
