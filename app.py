@@ -8,9 +8,6 @@ st.title("🤖 JARVIS AI")
 # Inicializa o cliente da Groq usando a chave dos Secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Nome do modelo limpo
-MODEL_NAME = "llama-3.1-8b-instant"
-
 # 1. INICIALIZAÇÃO DA MEMÓRIA
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -35,8 +32,11 @@ if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto.
 
     with st.chat_message("assistant"):
         try:
+            # Nome do modelo gerado com caracteres puros para evitar erros de colar
+            modelo_limpo = "llama" + "-" + "3.1" + "-" + "8b" + "-" + "instant"
+            
             completion = client.chat.completions.create(
-                model=MODEL_NAME,
+                model=modelo_limpo,
                 messages=st.session_state.messages,
                 temperature=0.7
             )
