@@ -7,11 +7,14 @@ st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 # Inicializa o cliente da Groq usando a chave dos Secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-MODEL_NAME = "llama-3.1-8b-instant"
+# TRATAMENTO DO NOME DO MODELO:
+# Substitui automaticamente qualquer travessão/meio-risco por hífen simples (-)
+RAW_MODEL = "llama-3.1-8b-instant"
+MODEL_NAME = RAW_MODEL.replace("–", "-").replace("—", "-").strip()
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
 if "chats" not in st.session_state:
-    st.session_state.chats = {}  # Guarda todas as conversas: {id: [mensagens]}
+    st.session_state.chats = {}
 
 if "active_chat_id" not in st.session_state:
     st.session_state.active_chat_id = "Conversa 1"
@@ -23,7 +26,6 @@ if "active_chat_id" not in st.session_state:
 with st.sidebar:
     st.title("🤖 JARVIS AI")
     
-    # Botão para criar uma nova conversa
     if st.button("➕ Nova conversa", use_container_width=True):
         new_id = f"Conversa {len(st.session_state.chats) + 1}"
         st.session_state.chats[new_id] = [
@@ -35,9 +37,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Recentes")
     
-    # Lista todas as conversas salvas na barra lateral
     for chat_id in list(st.session_state.chats.keys()):
-        # Destaca a conversa selecionada
         button_label = f"💬 {chat_id}"
         if st.button(button_label, key=chat_id, use_container_width=True):
             st.session_state.active_chat_id = chat_id
@@ -47,10 +47,8 @@ with st.sidebar:
 current_chat_id = st.session_state.active_chat_id
 st.title(f"🤖 JARVIS AI - ({current_chat_id})")
 
-# Pega as mensagens da conversa atual
 messages = st.session_state.chats[current_chat_id]
 
-# Exibe o histórico de mensagens da conversa selecionada
 for message in messages:
     if message["role"] != "system":
         with st.chat_message(message["role"]):
@@ -58,12 +56,10 @@ for message in messages:
 
 # 4. ENTRADA E PROCESSAMENTO
 if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto..."):
-    # Exibe a pergunta na tela e salva no chat atual
     with st.chat_message("user"):
         st.markdown(prompt)
     messages.append({"role": "user", "content": prompt})
 
-    # Resposta da IA
     with st.chat_message("assistant"):
         try:
             completion = client.chat.completions.create(
@@ -74,7 +70,6 @@ if prompt := st.chat_input("Pergunte sobre notícias, jogos ou qualquer assunto.
             response = completion.choices[0].message.content
             st.markdown(response)
             
-            # Salva a resposta no histórico da conversa atual
             messages.append({"role": "assistant", "content": response})
             
         except Exception as e:
