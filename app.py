@@ -7,9 +7,8 @@ st.set_page_config(page_title="JARVIS AI", page_icon="🤖", layout="wide")
 # Inicializa o cliente da Groq usando a chave dos Secrets
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# MÉTODO ANTI-CORRUPÇÃO:
-# Montamos o nome usando chr(45) para garantir o hífen ASCII exato
-MODEL_NAME = "llama" + chr(45) + "3.1" + chr(45) + "8b" + chr(45) + "instant"
+# Usando um modelo garantido e sem hífens problemáticos na versão
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 # 1. GERENCIAMENTO DE CONVERSAS NO SESSION STATE
 if "chats" not in st.session_state:
