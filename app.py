@@ -41,7 +41,278 @@ MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # ============================================================
-# 5. MEMÓRIA PERMANENTE
+# 5. FUNÇÕES DE AUTENTICAÇÃO
+# ============================================================
+
+def limpar_login():
+
+    st.session_state.pop("access_token", None)
+    st.session_state.pop("refresh_token", None)
+    st.session_state.pop("user", None)
+
+
+def fazer_login(email, senha):
+
+    try:
+
+        resposta = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": senha
+        })
+
+        if resposta.session is None:
+
+            return False, "Não foi possível iniciar a sessão."
+
+        st.session_state.access_token = resposta.session.access_token
+        st.session_state.refresh_token = resposta.session.refresh_token
+
+        usuario = resposta.user
+
+        if usuario:
+            st.session_state.user = usuario
+
+        return True, "Login realizado com sucesso!"
+
+    except Exception as e:
+
+        return False, str(e)
+
+
+def criar_conta(email, senha):
+
+    try:
+
+        resposta = supabase.auth.sign_up({
+            "email": email,
+            "password": senha
+        })
+
+        # Se o Supabase exigir confirmação de e-mail,
+        # a sessão será None.
+        if resposta.session is None:
+
+            return (
+                True,
+                "Conta criada! Verifique seu e-mail para confirmar a conta."
+            )
+
+        # Caso a confirmação de e-mail esteja desativada
+        if resposta.session:
+
+            st.session_state.access_token = (
+                resposta.session.access_token
+            )
+
+            st.session_state.refresh_token = (
+                resposta.session.refresh_token
+            )
+
+            st.session_state.user = resposta.user
+
+            return True, "Conta criada com sucesso!"
+
+    except Exception as e:
+
+        return False, str(e)
+
+
+# ============================================================
+# 6. RECUPERAR SESSÃO
+# ============================================================
+
+if (
+    "access_token" in st.session_state
+    and "refresh_token" in st.session_state
+):
+
+    try:
+
+        resposta = supabase.auth.set_session(
+            st.session_state.access_token,
+            st.session_state.refresh_token
+        )
+
+        if resposta.session:
+
+            st.session_state.access_token = (
+                resposta.session.access_token
+            )
+
+            st.session_state.refresh_token = (
+                resposta.session.refresh_token
+            )
+
+        usuario_resposta = supabase.auth.get_user()
+
+        if usuario_resposta.user:
+
+            st.session_state.user = usuario_resposta.user
+
+    except Exception:
+
+        limpar_login()
+
+
+# ============================================================
+# 7. TELA DE LOGIN
+# ============================================================
+
+if "user" not in st.session_state:
+
+    st.title("🤖 JARVIS AI")
+
+    st.subheader("🔐 Acesso ao JARVIS")
+
+    aba_login, aba_cadastro = st.tabs([
+        "Entrar",
+        "Criar conta"
+    ])
+
+
+    # ========================================================
+    # LOGIN
+    # ========================================================
+
+    with aba_login:
+
+        with st.form("login_form"):
+
+            email = st.text_input(
+                "E-mail",
+                placeholder="seu@email.com"
+            )
+
+            senha = st.text_input(
+                "Senha",
+                type="password"
+            )
+
+            entrar = st.form_submit_button(
+                "🔐 Entrar",
+                use_container_width=True
+            )
+
+
+        if entrar:
+
+            if not email or not senha:
+
+                st.warning(
+                    "Digite seu e-mail e sua senha."
+                )
+
+            else:
+
+                sucesso, mensagem = fazer_login(
+                    email,
+                    senha
+                )
+
+                if sucesso:
+
+                    st.success(mensagem)
+
+                    st.rerun()
+
+                else:
+
+                    st.error(
+                        f"Erro ao entrar: {mensagem}"
+                    )
+
+
+    # ========================================================
+    # CADASTRO
+    # ========================================================
+
+    with aba_cadastro:
+
+        with st.form("cadastro_form"):
+
+            novo_email = st.text_input(
+                "E-mail",
+                placeholder="seu@email.com"
+            )
+
+            nova_senha = st.text_input(
+                "Senha",
+                type="password"
+            )
+
+            confirmar_senha = st.text_input(
+                "Confirmar senha",
+                type="password"
+            )
+
+            cadastrar = st.form_submit_button(
+                "🆕 Criar conta",
+                use_container_width=True
+            )
+
+
+        if cadastrar:
+
+            if not novo_email or not nova_senha:
+
+                st.warning(
+                    "Preencha todos os campos."
+                )
+
+            elif nova_senha != confirmar_senha:
+
+                st.error(
+                    "As senhas não são iguais."
+                )
+
+            elif len(nova_senha) < 6:
+
+                st.error(
+                    "A senha precisa ter pelo menos 6 caracteres."
+                )
+
+            else:
+
+                sucesso, mensagem = criar_conta(
+                    novo_email,
+                    nova_senha
+                )
+
+                if sucesso:
+
+                    st.success(mensagem)
+
+                    if "user" in st.session_state:
+
+                        st.rerun()
+
+                else:
+
+                    st.error(
+                        f"Erro ao criar conta: {mensagem}"
+                    )
+
+
+    # ========================================================
+    # PARA O PROGRAMA AQUI SE NÃO ESTIVER LOGADO
+    # ========================================================
+
+    st.stop()
+
+
+# ============================================================
+# 8. USUÁRIO LOGADO
+# ============================================================
+
+usuario = st.session_state.user
+
+user_id = str(usuario.id)
+
+user_email = usuario.email
+
+
+# ============================================================
+# 9. MEMÓRIA PERMANENTE
 # ============================================================
 
 def salvar_memoria(categoria, conteudo):
@@ -49,15 +320,22 @@ def salvar_memoria(categoria, conteudo):
     try:
 
         supabase.table("memories").insert({
+
+            "user_id": user_id,
+
             "category": categoria,
+
             "content": conteudo
+
         }).execute()
 
         return True
 
     except Exception as e:
 
-        print(f"Erro ao salvar memória: {e}")
+        print(
+            f"Erro ao salvar memória: {e}"
+        )
 
         return False
 
@@ -70,6 +348,7 @@ def carregar_memorias():
             supabase
             .table("memories")
             .select("*")
+            .eq("user_id", user_id)
             .order("created_at", desc=False)
             .execute()
         )
@@ -78,7 +357,9 @@ def carregar_memorias():
 
     except Exception as e:
 
-        print(f"Erro ao carregar memórias: {e}")
+        print(
+            f"Erro ao carregar memórias: {e}"
+        )
 
         return []
 
@@ -89,12 +370,17 @@ def criar_contexto_memoria():
 
     if not memorias:
 
-        return "O usuário ainda não possui memórias salvas."
+        return (
+            "O usuário ainda não possui "
+            "memórias salvas."
+        )
 
     contexto = """
-Estas são informações que você deve lembrar sobre o usuário.
+Estas são informações que você deve lembrar
+sobre o usuário atual.
 
-Use essas informações quando forem relevantes para responder.
+Use essas informações quando forem relevantes
+para responder.
 
 """
 
@@ -109,7 +395,7 @@ Use essas informações quando forem relevantes para responder.
 
 
 # ============================================================
-# 6. CONVERSAS
+# 10. CONVERSAS
 # ============================================================
 
 if "chats" not in st.session_state:
@@ -120,6 +406,7 @@ if "chats" not in st.session_state:
 
             {
                 "role": "system",
+
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
                     "inteligente, prestativo e amigável. "
@@ -129,11 +416,12 @@ if "chats" not in st.session_state:
             }
 
         ]
+
     }
 
 
 # ============================================================
-# 7. CONVERSA ATIVA
+# 11. CONVERSA ATIVA
 # ============================================================
 
 if "active_chat_id" not in st.session_state:
@@ -142,21 +430,60 @@ if "active_chat_id" not in st.session_state:
 
 
 # ============================================================
-# 8. BARRA LATERAL
+# 12. BARRA LATERAL
 # ============================================================
 
 with st.sidebar:
 
     st.title("🤖 JARVIS AI")
 
-    st.caption(f"Modelo: {MODEL_NAME}")
+    st.caption(
+        f"Modelo: {MODEL_NAME}"
+    )
 
     st.markdown("---")
 
 
-    # --------------------------------------------------------
+    # ========================================================
+    # USUÁRIO
+    # ========================================================
+
+    st.subheader("👤 Conta")
+
+    st.write(user_email)
+
+
+    # ========================================================
+    # LOGOUT
+    # ========================================================
+
+    if st.button(
+        "🚪 Sair",
+        use_container_width=True
+    ):
+
+        try:
+
+            # Encerra apenas a sessão deste dispositivo
+            supabase.auth.sign_out({
+                "scope": "local"
+            })
+
+        except Exception:
+
+            pass
+
+        limpar_login()
+
+        st.rerun()
+
+
+    st.markdown("---")
+
+
+    # ========================================================
     # NOVA CONVERSA
-    # --------------------------------------------------------
+    # ========================================================
 
     if st.button(
         "➕ Nova conversa",
@@ -172,6 +499,7 @@ with st.sidebar:
 
             {
                 "role": "system",
+
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
                     "inteligente, prestativo e amigável. "
@@ -192,9 +520,9 @@ with st.sidebar:
     st.subheader("💬 Conversas")
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # LISTA DE CONVERSAS
-    # --------------------------------------------------------
+    # ========================================================
 
     for chat_id in list(
         st.session_state.chats.keys()
@@ -216,9 +544,9 @@ with st.sidebar:
     st.subheader("🧠 Memória")
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # MOSTRAR MEMÓRIAS
-    # --------------------------------------------------------
+    # ========================================================
 
     memorias = carregar_memorias()
 
@@ -226,25 +554,32 @@ with st.sidebar:
     if memorias:
 
         st.write(
-            f"{len(memorias)} memória(s) armazenada(s)"
+            f"{len(memorias)} memória(s) "
+            f"armazenada(s)"
         )
 
     else:
 
-        st.write("Nenhuma memória armazenada.")
+        st.write(
+            "Nenhuma memória armazenada."
+        )
 
 
 # ============================================================
-# 9. CONVERSA ATUAL
+# 13. CONVERSA ATUAL
 # ============================================================
 
-current_chat_id = st.session_state.active_chat_id
+current_chat_id = (
+    st.session_state.active_chat_id
+)
 
-messages = st.session_state.chats[current_chat_id]
+messages = (
+    st.session_state.chats[current_chat_id]
+)
 
 
 # ============================================================
-# 10. TÍTULO
+# 14. TÍTULO
 # ============================================================
 
 st.title(
@@ -253,14 +588,16 @@ st.title(
 
 
 # ============================================================
-# 11. MOSTRAR HISTÓRICO
+# 15. MOSTRAR HISTÓRICO
 # ============================================================
 
 for message in messages:
 
     if message["role"] != "system":
 
-        with st.chat_message(message["role"]):
+        with st.chat_message(
+            message["role"]
+        ):
 
             st.markdown(
                 message["content"]
@@ -268,7 +605,7 @@ for message in messages:
 
 
 # ============================================================
-# 12. ENTRADA DO USUÁRIO
+# 16. ENTRADA DO USUÁRIO
 # ============================================================
 
 prompt = st.chat_input(
@@ -277,13 +614,13 @@ prompt = st.chat_input(
 
 
 # ============================================================
-# 13. PROCESSAR MENSAGEM
+# 17. PROCESSAR MENSAGEM
 # ============================================================
 
 if prompt:
 
     # --------------------------------------------------------
-    # MOSTRA A MENSAGEM DO USUÁRIO
+    # MOSTRA A MENSAGEM
     # --------------------------------------------------------
 
     with st.chat_message("user"):
@@ -292,7 +629,7 @@ if prompt:
 
 
     # --------------------------------------------------------
-    # SALVA A MENSAGEM NA CONVERSA
+    # SALVA NA CONVERSA
     # --------------------------------------------------------
 
     messages.append({
@@ -305,7 +642,7 @@ if prompt:
 
 
     # ========================================================
-    # 14. DETECTAR O NOME DO USUÁRIO
+    # 18. DETECTAR O NOME
     # ========================================================
 
     prompt_lower = prompt.lower()
@@ -313,9 +650,13 @@ if prompt:
     frases_nome = [
 
         "meu nome é",
+
         "meu nome e",
+
         "me chamo",
+
         "eu me chamo",
+
         "pode me chamar de"
 
     ]
@@ -327,14 +668,16 @@ if prompt:
 
             try:
 
-                # Pega a parte depois da frase
-                parte = prompt.split(
-                    frase,
-                    1
-                )[1].strip()
+                inicio = (
+                    prompt_lower.find(frase)
+                    + len(frase)
+                )
 
+                parte = (
+                    prompt[inicio:]
+                    .strip()
+                )
 
-                # Remove pontuação básica
                 nome = (
                     parte
                     .split(".")[0]
@@ -342,10 +685,8 @@ if prompt:
                     .strip()
                 )
 
-
                 if nome:
 
-                    # Salva permanentemente no Supabase
                     salvar_memoria(
                         "nome",
                         nome
@@ -355,22 +696,25 @@ if prompt:
 
                 pass
 
+            break
+
 
     # ========================================================
-    # 15. CARREGAR MEMÓRIA
+    # 19. CARREGAR MEMÓRIA DO USUÁRIO
     # ========================================================
 
     memoria = criar_contexto_memoria()
 
 
     # ========================================================
-    # 16. PREPARAR MENSAGENS PARA A GROQ
+    # 20. PREPARAR MENSAGENS PARA A GROQ
     # ========================================================
 
     mensagens_para_ia = [
 
         {
             "role": "system",
+
             "content": (
                 "Você é o JARVIS, um assistente virtual "
                 "inteligente, prestativo e amigável. "
@@ -381,34 +725,37 @@ if prompt:
 
         {
             "role": "system",
+
             "content": memoria
         }
 
     ]
 
 
-    # Adiciona o histórico da conversa atual
+    # Adiciona histórico da conversa atual
     mensagens_para_ia.extend(
         messages[1:]
     )
 
 
     # ========================================================
-    # 17. GERAR RESPOSTA
+    # 21. GERAR RESPOSTA
     # ========================================================
 
     with st.chat_message("assistant"):
 
         try:
 
-            completion = client.chat.completions.create(
+            completion = (
+                client.chat.completions.create(
 
-                model=MODEL_NAME,
+                    model=MODEL_NAME,
 
-                messages=mensagens_para_ia,
+                    messages=mensagens_para_ia,
 
-                temperature=0.7
+                    temperature=0.7
 
+                )
             )
 
 
@@ -425,7 +772,7 @@ if prompt:
 
 
             # ------------------------------------------------
-            # SALVA RESPOSTA NA CONVERSA
+            # SALVA RESPOSTA
             # ------------------------------------------------
 
             messages.append({
