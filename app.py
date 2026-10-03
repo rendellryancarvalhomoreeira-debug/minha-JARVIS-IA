@@ -24,27 +24,92 @@ client = Groq(
 
 
 # ============================================================
-# 3. MODELO
+# 3. CONEXÃO COM O SUPABASE
+# ============================================================
+
+supabase = create_client(
+    st.secrets["SUPABASE_URL"],
+    st.secrets["SUPABASE_KEY"]
+)
+
+
+# ============================================================
+# 4. MODELO
 # ============================================================
 
 MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # ============================================================
-# 4. MEMÓRIA GLOBAL DO JARVIS
+# 5. MEMÓRIA PERMANENTE
 # ============================================================
 
-if "memory" not in st.session_state:
+def salvar_memoria(categoria, conteudo):
 
-    st.session_state.memory = {
-        "nome": "",
-        "preferencias": [],
-        "informacoes": []
-    }
+    try:
+
+        supabase.table("memories").insert({
+            "category": categoria,
+            "content": conteudo
+        }).execute()
+
+        return True
+
+    except Exception as e:
+
+        print(f"Erro ao salvar memória: {e}")
+
+        return False
+
+
+def carregar_memorias():
+
+    try:
+
+        resultado = (
+            supabase
+            .table("memories")
+            .select("*")
+            .order("created_at", desc=False)
+            .execute()
+        )
+
+        return resultado.data
+
+    except Exception as e:
+
+        print(f"Erro ao carregar memórias: {e}")
+
+        return []
+
+
+def criar_contexto_memoria():
+
+    memorias = carregar_memorias()
+
+    if not memorias:
+
+        return "O usuário ainda não possui memórias salvas."
+
+    contexto = """
+Estas são informações que você deve lembrar sobre o usuário.
+
+Use essas informações quando forem relevantes para responder.
+
+"""
+
+    for memoria in memorias:
+
+        contexto += (
+            f"- {memoria['category']}: "
+            f"{memoria['content']}\n"
+        )
+
+    return contexto
 
 
 # ============================================================
-# 5. CONVERSAS
+# 6. CONVERSAS
 # ============================================================
 
 if "chats" not in st.session_state:
@@ -57,7 +122,7 @@ if "chats" not in st.session_state:
                 "role": "system",
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
-                    "prestativo, inteligente e amigável. "
+                    "inteligente, prestativo e amigável. "
                     "Responda sempre em português do Brasil, "
                     "a menos que o usuário peça outro idioma."
                 )
@@ -68,56 +133,12 @@ if "chats" not in st.session_state:
 
 
 # ============================================================
-# 6. CONVERSA ATIVA
+# 7. CONVERSA ATIVA
 # ============================================================
 
 if "active_chat_id" not in st.session_state:
 
     st.session_state.active_chat_id = "Conversa 1"
-
-
-# ============================================================
-# 7. FUNÇÃO PARA CRIAR O CONTEXTO DE MEMÓRIA
-# ============================================================
-
-def criar_memoria():
-
-    memoria = st.session_state.memory
-
-    texto = """
-Você é o JARVIS.
-
-Estas são informações que você deve lembrar sobre o usuário:
-
-"""
-
-    # Nome
-    if memoria["nome"]:
-
-        texto += f"\nNome do usuário: {memoria['nome']}"
-
-
-    # Preferências
-    if memoria["preferencias"]:
-
-        texto += "\n\nPreferências do usuário:"
-
-        for item in memoria["preferencias"]:
-
-            texto += f"\n- {item}"
-
-
-    # Outras informações
-    if memoria["informacoes"]:
-
-        texto += "\n\nOutras informações importantes:"
-
-        for item in memoria["informacoes"]:
-
-            texto += f"\n- {item}"
-
-
-    return texto
 
 
 # ============================================================
@@ -130,6 +151,8 @@ with st.sidebar:
 
     st.caption(f"Modelo: {MODEL_NAME}")
 
+    st.markdown("---")
+
 
     # --------------------------------------------------------
     # NOVA CONVERSA
@@ -140,8 +163,10 @@ with st.sidebar:
         use_container_width=True
     ):
 
-        new_id = f"Conversa {len(st.session_state.chats) + 1}"
-
+        new_id = (
+            f"Conversa "
+            f"{len(st.session_state.chats) + 1}"
+        )
 
         st.session_state.chats[new_id] = [
 
@@ -149,14 +174,13 @@ with st.sidebar:
                 "role": "system",
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
-                    "prestativo, inteligente e amigável. "
+                    "inteligente, prestativo e amigável. "
                     "Responda sempre em português do Brasil, "
                     "a menos que o usuário peça outro idioma."
                 )
             }
 
         ]
-
 
         st.session_state.active_chat_id = new_id
 
@@ -165,20 +189,19 @@ with st.sidebar:
 
     st.markdown("---")
 
-    st.subheader("Recentes")
+    st.subheader("💬 Conversas")
 
 
     # --------------------------------------------------------
     # LISTA DE CONVERSAS
     # --------------------------------------------------------
 
-    for chat_id in list(st.session_state.chats.keys()):
-
-        button_label = f"💬 {chat_id}"
-
+    for chat_id in list(
+        st.session_state.chats.keys()
+    ):
 
         if st.button(
-            button_label,
+            f"💬 {chat_id}",
             key=chat_id,
             use_container_width=True
         ):
@@ -188,32 +211,27 @@ with st.sidebar:
             st.rerun()
 
 
-    # --------------------------------------------------------
-    # MOSTRAR MEMÓRIA
-    # --------------------------------------------------------
-
     st.markdown("---")
 
     st.subheader("🧠 Memória")
 
 
-    if st.session_state.memory["nome"]:
+    # --------------------------------------------------------
+    # MOSTRAR MEMÓRIAS
+    # --------------------------------------------------------
+
+    memorias = carregar_memorias()
+
+
+    if memorias:
 
         st.write(
-            f"👤 Nome: {st.session_state.memory['nome']}"
+            f"{len(memorias)} memória(s) armazenada(s)"
         )
 
     else:
 
-        st.write("👤 Nome: não informado")
-
-
-    if st.session_state.memory["preferencias"]:
-
-        st.write(
-            f"⭐ Preferências: "
-            f"{len(st.session_state.memory['preferencias'])}"
-        )
+        st.write("Nenhuma memória armazenada.")
 
 
 # ============================================================
@@ -222,17 +240,20 @@ with st.sidebar:
 
 current_chat_id = st.session_state.active_chat_id
 
-
-st.title(
-    f"🤖 JARVIS AI - ({current_chat_id})"
-)
-
-
 messages = st.session_state.chats[current_chat_id]
 
 
 # ============================================================
-# 10. MOSTRAR HISTÓRICO
+# 10. TÍTULO
+# ============================================================
+
+st.title(
+    f"🤖 JARVIS AI - {current_chat_id}"
+)
+
+
+# ============================================================
+# 11. MOSTRAR HISTÓRICO
 # ============================================================
 
 for message in messages:
@@ -241,11 +262,13 @@ for message in messages:
 
         with st.chat_message(message["role"]):
 
-            st.markdown(message["content"])
+            st.markdown(
+                message["content"]
+            )
 
 
 # ============================================================
-# 11. ENTRADA DO USUÁRIO
+# 12. ENTRADA DO USUÁRIO
 # ============================================================
 
 prompt = st.chat_input(
@@ -254,14 +277,13 @@ prompt = st.chat_input(
 
 
 # ============================================================
-# 12. PROCESSAMENTO
+# 13. PROCESSAR MENSAGEM
 # ============================================================
 
 if prompt:
 
-
     # --------------------------------------------------------
-    # MOSTRA MENSAGEM
+    # MOSTRA A MENSAGEM DO USUÁRIO
     # --------------------------------------------------------
 
     with st.chat_message("user"):
@@ -270,7 +292,7 @@ if prompt:
 
 
     # --------------------------------------------------------
-    # SALVA MENSAGEM
+    # SALVA A MENSAGEM NA CONVERSA
     # --------------------------------------------------------
 
     messages.append({
@@ -283,11 +305,10 @@ if prompt:
 
 
     # ========================================================
-    # 13. DETECTAR NOME
+    # 14. DETECTAR O NOME DO USUÁRIO
     # ========================================================
 
     prompt_lower = prompt.lower()
-
 
     frases_nome = [
 
@@ -306,66 +327,74 @@ if prompt:
 
             try:
 
-                nome = prompt_lower.split(frase, 1)[1]
+                # Pega a parte depois da frase
+                parte = prompt.split(
+                    frase,
+                    1
+                )[1].strip()
 
-                nome = nome.strip()
 
-                nome = nome.split(".")[0]
-
-                nome = nome.split(",")[0]
-
-                nome = nome.strip()
+                # Remove pontuação básica
+                nome = (
+                    parte
+                    .split(".")[0]
+                    .split(",")[0]
+                    .strip()
+                )
 
 
                 if nome:
 
-                    # Recupera o texto original
-                    parte_original = prompt.split(
-                        frase,
-                        1
-                    )[1].strip()
-
-
-                    nome_original = parte_original.split(
-                        "."
-                    )[0].split(",")[0].strip()
-
-
-                    st.session_state.memory["nome"] = (
-                        nome_original
+                    # Salva permanentemente no Supabase
+                    salvar_memoria(
+                        "nome",
+                        nome
                     )
 
-            except:
+            except Exception:
 
                 pass
 
 
     # ========================================================
-    # 14. CONSTRUIR CONTEXTO COM MEMÓRIA
+    # 15. CARREGAR MEMÓRIA
     # ========================================================
 
-    memoria = criar_memoria()
+    memoria = criar_contexto_memoria()
 
 
-    # Criamos uma cópia das mensagens
-    mensagens_para_ia = list(messages)
+    # ========================================================
+    # 16. PREPARAR MENSAGENS PARA A GROQ
+    # ========================================================
 
+    mensagens_para_ia = [
 
-    # Inserimos a memória antes da conversa
-    mensagens_para_ia.insert(
-
-        1,
+        {
+            "role": "system",
+            "content": (
+                "Você é o JARVIS, um assistente virtual "
+                "inteligente, prestativo e amigável. "
+                "Responda sempre em português do Brasil, "
+                "a menos que o usuário peça outro idioma."
+            )
+        },
 
         {
             "role": "system",
             "content": memoria
         }
 
+    ]
+
+
+    # Adiciona o histórico da conversa atual
+    mensagens_para_ia.extend(
+        messages[1:]
     )
 
 
     # ========================================================
-    # 15. GERAR RESPOSTA
+    # 17. GERAR RESPOSTA
     # ========================================================
 
     with st.chat_message("assistant"):
@@ -391,11 +420,12 @@ if prompt:
             )
 
 
+            # Mostra resposta
             st.markdown(response)
 
 
             # ------------------------------------------------
-            # SALVA RESPOSTA
+            # SALVA RESPOSTA NA CONVERSA
             # ------------------------------------------------
 
             messages.append({
