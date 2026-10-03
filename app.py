@@ -746,17 +746,23 @@ if prompt:
 
         try:
 
-            completion = (
-                client.chat.completions.create(
+completion = (
+    client.chat.completions.create(
 
-                    model=MODEL_NAME,
+        model=MODEL_NAME,
 
-                    messages=mensagens_para_ia,
+        messages=mensagens_para_ia,
 
-                    temperature=0.7
+        temperature=0.7,
 
-                )
-            )
+        tools=[
+            {
+                "type": "browser_search"
+            }
+        ]
+
+    )
+)
 
 
             response = (
