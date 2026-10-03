@@ -1,6 +1,8 @@
 import streamlit as st
 from groq import Groq
 from supabase import create_client
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 # ============================================================
@@ -41,7 +43,19 @@ MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # ============================================================
-# 5. FUNÇÕES DE AUTENTICAÇÃO
+# 5. DATA E HORA DO BRASIL
+# ============================================================
+
+agora = datetime.now(
+    ZoneInfo("America/Sao_Paulo")
+)
+
+data_atual = agora.strftime("%d/%m/%Y")
+hora_atual = agora.strftime("%H:%M")
+
+
+# ============================================================
+# 6. FUNÇÕES DE AUTENTICAÇÃO
 # ============================================================
 
 def limpar_login():
@@ -128,7 +142,7 @@ def criar_conta(email, senha):
 
 
 # ============================================================
-# 6. RECUPERAR SESSÃO
+# 7. RECUPERAR SESSÃO
 # ============================================================
 
 if (
@@ -167,7 +181,7 @@ if (
 
 
 # ============================================================
-# 7. TELA DE LOGIN
+# 8. TELA DE LOGIN
 # ============================================================
 
 if "user" not in st.session_state:
@@ -306,14 +320,14 @@ if "user" not in st.session_state:
 
 
     # ========================================================
-    # PARA O PROGRAMA SE NÃO ESTIVER LOGADO
+    # PARAR O PROGRAMA SE NÃO ESTIVER LOGADO
     # ========================================================
 
     st.stop()
 
 
 # ============================================================
-# 8. USUÁRIO LOGADO
+# 9. USUÁRIO LOGADO
 # ============================================================
 
 usuario = st.session_state.user
@@ -324,7 +338,7 @@ user_email = usuario.email
 
 
 # ============================================================
-# 9. MEMÓRIA PERMANENTE
+# 10. MEMÓRIA PERMANENTE
 # ============================================================
 
 def salvar_memoria(categoria, conteudo):
@@ -407,7 +421,7 @@ para responder.
 
 
 # ============================================================
-# 10. CONVERSAS
+# 11. CONVERSAS
 # ============================================================
 
 if "chats" not in st.session_state:
@@ -433,7 +447,7 @@ if "chats" not in st.session_state:
 
 
 # ============================================================
-# 11. CONVERSA ATIVA
+# 12. CONVERSA ATIVA
 # ============================================================
 
 if "active_chat_id" not in st.session_state:
@@ -442,7 +456,7 @@ if "active_chat_id" not in st.session_state:
 
 
 # ============================================================
-# 12. BARRA LATERAL
+# 13. BARRA LATERAL
 # ============================================================
 
 with st.sidebar:
@@ -577,7 +591,7 @@ with st.sidebar:
 
 
 # ============================================================
-# 13. CONVERSA ATUAL
+# 14. CONVERSA ATUAL
 # ============================================================
 
 current_chat_id = (
@@ -590,7 +604,7 @@ messages = (
 
 
 # ============================================================
-# 14. TÍTULO
+# 15. TÍTULO
 # ============================================================
 
 st.title(
@@ -599,7 +613,7 @@ st.title(
 
 
 # ============================================================
-# 15. MOSTRAR HISTÓRICO
+# 16. MOSTRAR HISTÓRICO
 # ============================================================
 
 for message in messages:
@@ -616,7 +630,7 @@ for message in messages:
 
 
 # ============================================================
-# 16. ENTRADA DO USUÁRIO
+# 17. ENTRADA DO USUÁRIO
 # ============================================================
 
 prompt = st.chat_input(
@@ -625,7 +639,7 @@ prompt = st.chat_input(
 
 
 # ============================================================
-# 17. PROCESSAR MENSAGEM
+# 18. PROCESSAR MENSAGEM
 # ============================================================
 
 if prompt:
@@ -653,7 +667,7 @@ if prompt:
 
 
     # ========================================================
-    # 18. DETECTAR O NOME DO USUÁRIO
+    # 19. DETECTAR O NOME DO USUÁRIO
     # ========================================================
 
     prompt_lower = prompt.lower()
@@ -711,14 +725,14 @@ if prompt:
 
 
     # ========================================================
-    # 19. CARREGAR MEMÓRIA
+    # 20. CARREGAR MEMÓRIA
     # ========================================================
 
     memoria = criar_contexto_memoria()
 
 
     # ========================================================
-    # 20. PREPARAR MENSAGENS
+    # 21. PREPARAR MENSAGENS
     # ========================================================
 
     mensagens_para_ia = [
@@ -729,8 +743,26 @@ if prompt:
             "content": (
                 "Você é o JARVIS, um assistente virtual "
                 "inteligente, prestativo e amigável. "
+
                 "Responda sempre em português do Brasil, "
-                "a menos que o usuário peça outro idioma."
+                "a menos que o usuário peça outro idioma. "
+
+                f"A data atual é {data_atual}. "
+                f"O horário atual no Brasil é {hora_atual}. "
+
+                "Nunca invente a data ou o horário atual. "
+
+                "Quando o usuário perguntar sobre "
+                "acontecimentos recentes, notícias, "
+                "preços, resultados, clima, política, "
+                "pessoas atualmente ocupando cargos, "
+                "ou qualquer informação que possa ter "
+                "mudado recentemente, use a pesquisa "
+                "na internet. "
+
+                "Quando usar informações da internet, "
+                "baseie sua resposta nos resultados "
+                "encontrados e não invente informações."
             )
         },
 
@@ -744,7 +776,7 @@ if prompt:
 
 
     # ========================================================
-    # ADICIONAR HISTÓRICO
+    # 22. ADICIONAR HISTÓRICO
     # ========================================================
 
     mensagens_para_ia.extend(
@@ -753,7 +785,125 @@ if prompt:
 
 
     # ========================================================
-    # 21. GERAR RESPOSTA
+    # 23. DETECTAR SE PRECISA DE PESQUISA
+    # ========================================================
+
+    palavras_atualidade = [
+
+        "hoje",
+        "agora",
+        "atual",
+        "atualmente",
+        "última",
+        "últimas",
+        "ultimo",
+        "último",
+        "ultimas",
+        "recentes",
+        "recentemente",
+
+        "notícia",
+        "noticias",
+        "notícia",
+        "notícias",
+
+        "ontem",
+        "amanhã",
+        "amanha",
+
+        "preço",
+        "preco",
+        "preços",
+        "precos",
+
+        "cotação",
+        "cotacao",
+
+        "dólar",
+        "dolar",
+        "euro",
+
+        "clima",
+        "tempo",
+        "temperatura",
+
+        "placar",
+        "resultado",
+        "resultados",
+
+        "jogo",
+        "jogos",
+
+        "mercado",
+
+        "presidente",
+        "governador",
+        "prefeito",
+
+        "eleição",
+        "eleições",
+        "eleicao",
+        "eleicoes",
+
+        "candidato",
+        "candidatos",
+
+        "política",
+        "politica",
+
+        "governo",
+
+        "lançamento",
+        "lancamento",
+
+        "versão",
+        "versao",
+
+        "atualização",
+        "atualizacao"
+    ]
+
+
+    usar_busca = any(
+        palavra in prompt_lower
+        for palavra in palavras_atualidade
+    )
+
+
+    # ========================================================
+    # 24. CONFIGURAR REQUISIÇÃO PARA A GROQ
+    # ========================================================
+
+    parametros = {
+
+        "model": MODEL_NAME,
+
+        "messages": mensagens_para_ia,
+
+        "temperature": 0.7
+
+    }
+
+
+    # ========================================================
+    # 25. ATIVAR BUSCA NA INTERNET
+    # ========================================================
+
+    if usar_busca:
+
+        parametros["tools"] = [
+
+            {
+                "type": "browser_search"
+            }
+
+        ]
+
+        parametros["tool_choice"] = "required"
+
+
+    # ========================================================
+    # 26. GERAR RESPOSTA
     # ========================================================
 
     with st.chat_message("assistant"):
@@ -761,20 +911,11 @@ if prompt:
         try:
 
             completion = (
-                client.chat.completions.create(
-
-                    model=MODEL_NAME,
-
-                    messages=mensagens_para_ia,
-
-                    temperature=0.7,
-
-                    tools=[
-                        {
-                            "type": "browser_search"
-                        }
-                    ]
-
+                client
+                .chat
+                .completions
+                .create(
+                    **parametros
                 )
             )
 
@@ -789,6 +930,18 @@ if prompt:
                 .message
                 .content
             )
+
+
+            # =================================================
+            # VERIFICAR RESPOSTA VAZIA
+            # =================================================
+
+            if not response:
+
+                response = (
+                    "Desculpe, não consegui gerar "
+                    "uma resposta agora."
+                )
 
 
             # =================================================
