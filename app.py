@@ -64,13 +64,17 @@ def fazer_login(email, senha):
 
             return False, "Não foi possível iniciar a sessão."
 
-        st.session_state.access_token = resposta.session.access_token
-        st.session_state.refresh_token = resposta.session.refresh_token
+        st.session_state.access_token = (
+            resposta.session.access_token
+        )
 
-        usuario = resposta.user
+        st.session_state.refresh_token = (
+            resposta.session.refresh_token
+        )
 
-        if usuario:
-            st.session_state.user = usuario
+        if resposta.user:
+
+            st.session_state.user = resposta.user
 
         return True, "Login realizado com sucesso!"
 
@@ -88,16 +92,22 @@ def criar_conta(email, senha):
             "password": senha
         })
 
-        # Se o Supabase exigir confirmação de e-mail,
-        # a sessão será None.
+        # ----------------------------------------------------
+        # Se o Supabase exigir confirmação de e-mail
+        # ----------------------------------------------------
+
         if resposta.session is None:
 
             return (
                 True,
-                "Conta criada! Verifique seu e-mail para confirmar a conta."
+                "Conta criada! Verifique seu e-mail "
+                "para confirmar a conta."
             )
 
-        # Caso a confirmação de e-mail esteja desativada
+        # ----------------------------------------------------
+        # Se a confirmação não for necessária
+        # ----------------------------------------------------
+
         if resposta.session:
 
             st.session_state.access_token = (
@@ -147,7 +157,9 @@ if (
 
         if usuario_resposta.user:
 
-            st.session_state.user = usuario_resposta.user
+            st.session_state.user = (
+                usuario_resposta.user
+            )
 
     except Exception:
 
@@ -294,7 +306,7 @@ if "user" not in st.session_state:
 
 
     # ========================================================
-    # PARA O PROGRAMA AQUI SE NÃO ESTIVER LOGADO
+    # PARA O PROGRAMA SE NÃO ESTIVER LOGADO
     # ========================================================
 
     st.stop()
@@ -445,7 +457,7 @@ with st.sidebar:
 
 
     # ========================================================
-    # USUÁRIO
+    # CONTA
     # ========================================================
 
     st.subheader("👤 Conta")
@@ -464,7 +476,6 @@ with st.sidebar:
 
         try:
 
-            # Encerra apenas a sessão deste dispositivo
             supabase.auth.sign_out({
                 "scope": "local"
             })
@@ -619,18 +630,18 @@ prompt = st.chat_input(
 
 if prompt:
 
-    # --------------------------------------------------------
-    # MOSTRA A MENSAGEM
-    # --------------------------------------------------------
+    # ========================================================
+    # MOSTRAR MENSAGEM DO USUÁRIO
+    # ========================================================
 
     with st.chat_message("user"):
 
         st.markdown(prompt)
 
 
-    # --------------------------------------------------------
-    # SALVA NA CONVERSA
-    # --------------------------------------------------------
+    # ========================================================
+    # SALVAR MENSAGEM
+    # ========================================================
 
     messages.append({
 
@@ -642,7 +653,7 @@ if prompt:
 
 
     # ========================================================
-    # 18. DETECTAR O NOME
+    # 18. DETECTAR O NOME DO USUÁRIO
     # ========================================================
 
     prompt_lower = prompt.lower()
@@ -700,14 +711,14 @@ if prompt:
 
 
     # ========================================================
-    # 19. CARREGAR MEMÓRIA DO USUÁRIO
+    # 19. CARREGAR MEMÓRIA
     # ========================================================
 
     memoria = criar_contexto_memoria()
 
 
     # ========================================================
-    # 20. PREPARAR MENSAGENS PARA A GROQ
+    # 20. PREPARAR MENSAGENS
     # ========================================================
 
     mensagens_para_ia = [
@@ -732,7 +743,10 @@ if prompt:
     ]
 
 
-    # Adiciona histórico da conversa atual
+    # ========================================================
+    # ADICIONAR HISTÓRICO
+    # ========================================================
+
     mensagens_para_ia.extend(
         messages[1:]
     )
@@ -746,24 +760,28 @@ if prompt:
 
         try:
 
-completion = (
-    client.chat.completions.create(
+            completion = (
+                client.chat.completions.create(
 
-        model=MODEL_NAME,
+                    model=MODEL_NAME,
 
-        messages=mensagens_para_ia,
+                    messages=mensagens_para_ia,
 
-        temperature=0.7,
+                    temperature=0.7,
 
-        tools=[
-            {
-                "type": "browser_search"
-            }
-        ]
+                    tools=[
+                        {
+                            "type": "browser_search"
+                        }
+                    ]
 
-    )
-)
+                )
+            )
 
+
+            # =================================================
+            # PEGAR RESPOSTA
+            # =================================================
 
             response = (
                 completion
@@ -773,13 +791,16 @@ completion = (
             )
 
 
-            # Mostra resposta
+            # =================================================
+            # MOSTRAR RESPOSTA
+            # =================================================
+
             st.markdown(response)
 
 
-            # ------------------------------------------------
-            # SALVA RESPOSTA
-            # ------------------------------------------------
+            # =================================================
+            # SALVAR RESPOSTA NA CONVERSA
+            # =================================================
 
             messages.append({
 
