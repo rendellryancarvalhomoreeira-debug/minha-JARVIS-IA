@@ -46,12 +46,16 @@ MODEL_NAME = "openai/gpt-oss-20b"
 # 5. DATA E HORA DO BRASIL
 # ============================================================
 
-agora = datetime.now(
-    ZoneInfo("America/Sao_Paulo")
-)
+def obter_data_hora():
 
-data_atual = agora.strftime("%d/%m/%Y")
-hora_atual = agora.strftime("%H:%M")
+    agora = datetime.now(
+        ZoneInfo("America/Sao_Paulo")
+    )
+
+    data = agora.strftime("%d/%m/%Y")
+    hora = agora.strftime("%H:%M")
+
+    return data, hora
 
 
 # ============================================================
@@ -139,6 +143,8 @@ def criar_conta(email, senha):
     except Exception as e:
 
         return False, str(e)
+
+    return False, "Não foi possível criar a conta."
 
 
 # ============================================================
@@ -320,7 +326,7 @@ if "user" not in st.session_state:
 
 
     # ========================================================
-    # PARAR O PROGRAMA SE NÃO ESTIVER LOGADO
+    # PARAR O PROGRAMA
     # ========================================================
 
     st.stop()
@@ -435,9 +441,7 @@ if "chats" not in st.session_state:
 
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
-                    "inteligente, prestativo e amigável. "
-                    "Responda sempre em português do Brasil, "
-                    "a menos que o usuário peça outro idioma."
+                    "inteligente, prestativo e amigável."
                 )
             }
 
@@ -527,9 +531,7 @@ with st.sidebar:
 
                 "content": (
                     "Você é o JARVIS, um assistente virtual "
-                    "inteligente, prestativo e amigável. "
-                    "Responda sempre em português do Brasil, "
-                    "a menos que o usuário peça outro idioma."
+                    "inteligente, prestativo e amigável."
                 )
             }
 
@@ -675,13 +677,9 @@ if prompt:
     frases_nome = [
 
         "meu nome é",
-
         "meu nome e",
-
         "me chamo",
-
         "eu me chamo",
-
         "pode me chamar de"
 
     ]
@@ -725,14 +723,23 @@ if prompt:
 
 
     # ========================================================
-    # 20. CARREGAR MEMÓRIA
+    # 20. DATA E HORA ATUAIS
+    # ========================================================
+
+    data_atual, hora_atual = (
+        obter_data_hora()
+    )
+
+
+    # ========================================================
+    # 21. CARREGAR MEMÓRIA
     # ========================================================
 
     memoria = criar_contexto_memoria()
 
 
     # ========================================================
-    # 21. PREPARAR MENSAGENS
+    # 22. PREPARAR MENSAGENS
     # ========================================================
 
     mensagens_para_ia = [
@@ -741,28 +748,67 @@ if prompt:
             "role": "system",
 
             "content": (
-                "Você é o JARVIS, um assistente virtual "
-                "inteligente, prestativo e amigável. "
+
+                "Você é JARVIS, um assistente virtual "
+                "avançado, inteligente, prestativo, "
+                "educado e natural. "
+
+                "Seu objetivo é conversar com o usuário "
+                "de maneira semelhante a um assistente "
+                "pessoal sofisticado. "
 
                 "Responda sempre em português do Brasil, "
                 "a menos que o usuário peça outro idioma. "
 
-                f"A data atual é {data_atual}. "
+                f"A data atual no Brasil é {data_atual}. "
                 f"O horário atual no Brasil é {hora_atual}. "
 
                 "Nunca invente a data ou o horário atual. "
 
-                "Quando o usuário perguntar sobre "
-                "acontecimentos recentes, notícias, "
-                "preços, resultados, clima, política, "
-                "pessoas atualmente ocupando cargos, "
-                "ou qualquer informação que possa ter "
-                "mudado recentemente, use a pesquisa "
-                "na internet. "
+                "Você possui acesso à ferramenta "
+                "browser_search. "
 
-                "Quando usar informações da internet, "
-                "baseie sua resposta nos resultados "
-                "encontrados e não invente informações."
+                "Quando uma pergunta depender de "
+                "informações atuais, recentes ou que "
+                "possam ter mudado desde seu treinamento, "
+                "pesquise na internet antes de responder. "
+
+                "Isso inclui notícias, política atual, "
+                "presidentes, governadores, prefeitos, "
+                "eleições, resultados de jogos, preços, "
+                "cotações, clima, lançamentos, versões "
+                "de software, acontecimentos recentes "
+                "e informações sobre pessoas ou empresas "
+                "que possam ter mudado. "
+
+                "Perguntas de acompanhamento também "
+                "devem ser interpretadas considerando "
+                "o contexto da conversa anterior. "
+
+                "Por exemplo, se o usuário perguntar "
+                "'quem é o atual presidente?' e depois "
+                "perguntar 'qual a chance dele ser "
+                "reeleito?', entenda que 'dele' se refere "
+                "à pessoa mencionada anteriormente. "
+
+                "Quando a pergunta envolver uma previsão "
+                "ou probabilidade sobre um acontecimento "
+                "futuro, não invente uma porcentagem. "
+                "Explique os fatores relevantes e, quando "
+                "existirem pesquisas ou estimativas atuais, "
+                "consulte fontes recentes. "
+
+                "Não invente fontes, fatos, números ou "
+                "resultados de pesquisas. "
+
+                "Se a informação encontrada na internet "
+                "for insuficiente ou conflitante, deixe "
+                "isso claro para o usuário. "
+
+                "Se a pergunta não precisar de informações "
+                "atuais, responda normalmente sem realizar "
+                "uma pesquisa desnecessária."
+
             )
         },
 
@@ -770,13 +816,14 @@ if prompt:
             "role": "system",
 
             "content": memoria
+
         }
 
     ]
 
 
     # ========================================================
-    # 22. ADICIONAR HISTÓRICO
+    # 23. ADICIONAR HISTÓRICO
     # ========================================================
 
     mensagens_para_ia.extend(
@@ -785,93 +832,7 @@ if prompt:
 
 
     # ========================================================
-    # 23. DETECTAR SE PRECISA DE PESQUISA
-    # ========================================================
-
-    palavras_atualidade = [
-
-        "hoje",
-        "agora",
-        "atual",
-        "atualmente",
-        "última",
-        "últimas",
-        "ultimo",
-        "último",
-        "ultimas",
-        "recentes",
-        "recentemente",
-
-        "notícia",
-        "noticias",
-        "notícia",
-        "notícias",
-
-        "ontem",
-        "amanhã",
-        "amanha",
-
-        "preço",
-        "preco",
-        "preços",
-        "precos",
-
-        "cotação",
-        "cotacao",
-
-        "dólar",
-        "dolar",
-        "euro",
-
-        "clima",
-        "tempo",
-        "temperatura",
-
-        "placar",
-        "resultado",
-        "resultados",
-
-        "jogo",
-        "jogos",
-
-        "mercado",
-
-        "presidente",
-        "governador",
-        "prefeito",
-
-        "eleição",
-        "eleições",
-        "eleicao",
-        "eleicoes",
-
-        "candidato",
-        "candidatos",
-
-        "política",
-        "politica",
-
-        "governo",
-
-        "lançamento",
-        "lancamento",
-
-        "versão",
-        "versao",
-
-        "atualização",
-        "atualizacao"
-    ]
-
-
-    usar_busca = any(
-        palavra in prompt_lower
-        for palavra in palavras_atualidade
-    )
-
-
-    # ========================================================
-    # 24. CONFIGURAR REQUISIÇÃO PARA A GROQ
+    # 24. CONFIGURAÇÃO DA GROQ
     # ========================================================
 
     parametros = {
@@ -880,30 +841,23 @@ if prompt:
 
         "messages": mensagens_para_ia,
 
-        "temperature": 0.7
+        "temperature": 0.7,
 
-    }
-
-
-    # ========================================================
-    # 25. ATIVAR BUSCA NA INTERNET
-    # ========================================================
-
-    if usar_busca:
-
-        parametros["tools"] = [
+        "tools": [
 
             {
                 "type": "browser_search"
             }
 
-        ]
+        ],
 
-        parametros["tool_choice"] = "required"
+        "tool_choice": "auto"
+
+    }
 
 
     # ========================================================
-    # 26. GERAR RESPOSTA
+    # 25. GERAR RESPOSTA
     # ========================================================
 
     with st.chat_message("assistant"):
