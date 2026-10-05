@@ -64,65 +64,111 @@ def transcrever_audio(audio_file):
 def falar_texto(texto):
 
     """
-    Usa a voz disponível no navegador para falar em português.
-    Não precisa de uma API de TTS separada.
+    Cria um botão no navegador para reproduzir a resposta
+    usando a voz disponível no sistema/navegador.
+    A fala só começa depois do clique do usuário, evitando
+    o bloqueio de reprodução automática do navegador.
     """
 
     try:
 
-        texto_seguro = json.dumps(texto, ensure_ascii=False)
+        texto_seguro = json.dumps(
+            texto,
+            ensure_ascii=False
+        )
 
         html = f"""
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: sans-serif;
+            }}
+
+            .container {{
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }}
+
+            button {{
+                border: 1px solid rgba(128,128,128,0.35);
+                border-radius: 8px;
+                padding: 7px 12px;
+                background: transparent;
+                color: inherit;
+                cursor: pointer;
+                font-size: 14px;
+            }}
+
+            button:hover {{
+                background: rgba(128,128,128,0.12);
+            }}
+        </style>
+
+        <div class="container">
+            <button id="ouvir">🔊 Ouvir</button>
+            <button id="parar">⏹ Parar</button>
+        </div>
+
         <script>
-        const texto = {texto_seguro};
+            const texto = {texto_seguro};
 
-        function falar() {{
-            if (!('speechSynthesis' in window)) {{
-                return;
+            const botaoOuvir = document.getElementById('ouvir');
+            const botaoParar = document.getElementById('parar');
+
+            function escolherVoz(fala) {{
+                const vozes = window.speechSynthesis.getVoices();
+
+                const vozPortugues = vozes.find(voz =>
+                    voz.lang &&
+                    voz.lang.toLowerCase() === 'pt-br'
+                ) || vozes.find(voz =>
+                    voz.lang &&
+                    voz.lang.toLowerCase().startsWith('pt')
+                );
+
+                if (vozPortugues) {{
+                    fala.voice = vozPortugues;
+                }}
             }}
 
-            window.speechSynthesis.cancel();
+            botaoOuvir.addEventListener('click', () => {{
+                if (!('speechSynthesis' in window)) {{
+                    alert('Seu navegador não possui suporte à síntese de voz.');
+                    return;
+                }}
 
-            const fala = new SpeechSynthesisUtterance(texto);
-            fala.lang = 'pt-BR';
-            fala.rate = 1.0;
-            fala.pitch = 0.95;
-            fala.volume = 1.0;
+                window.speechSynthesis.cancel();
 
-            const vozes = window.speechSynthesis.getVoices();
-            const vozPortugues = vozes.find(voz =>
-                voz.lang && voz.lang.toLowerCase().startsWith('pt-br')
-            ) || vozes.find(voz =>
-                voz.lang && voz.lang.toLowerCase().startsWith('pt')
-            );
+                const fala = new SpeechSynthesisUtterance(texto);
+                fala.lang = 'pt-BR';
+                fala.rate = 1.0;
+                fala.pitch = 0.95;
+                fala.volume = 1.0;
 
-            if (vozPortugues) {{
-                fala.voice = vozPortugues;
-            }}
+                escolherVoz(fala);
+                window.speechSynthesis.speak(fala);
+            }});
 
-            window.speechSynthesis.speak(fala);
-        }}
-
-        if (window.speechSynthesis.getVoices().length === 0) {{
-            window.speechSynthesis.addEventListener(
-                'voiceschanged', falar, {{ once: true }}
-            );
-        }} else {{
-            falar();
-        }}
+            botaoParar.addEventListener('click', () => {{
+                if ('speechSynthesis' in window) {{
+                    window.speechSynthesis.cancel();
+                }}
+            }});
         </script>
         """
 
         components.html(
             html,
-            height=1,
+            height=55,
             scrolling=False
         )
 
     except Exception as e:
 
         st.warning(
-            f"Não foi possível reproduzir a voz: {e}"
+            f"Não foi possível preparar a voz: {{e}}"
         )
 
 
@@ -1044,7 +1090,7 @@ if prompt:
 
 
             # =================================================
-            # FALAR RESPOSTA EM VOZ ALTA
+            # BOTÕES DE VOZ
             # =================================================
 
             falar_texto(response)
