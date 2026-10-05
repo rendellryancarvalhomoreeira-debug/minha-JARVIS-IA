@@ -26,6 +26,40 @@ client = Groq(
 
 
 # ============================================================
+# 2.1. VOZ - TRANSCRIÇÃO
+# ============================================================
+
+VOICE_MODEL = "whisper-large-v3-turbo"
+
+
+def transcrever_audio(audio_file):
+
+    try:
+
+        audio_bytes = audio_file.getvalue()
+
+        transcription = client.audio.transcriptions.create(
+            file=("audio.wav", audio_bytes),
+            model=VOICE_MODEL,
+            language="pt",
+            response_format="json",
+            temperature=0
+        )
+
+        texto = transcription.text.strip()
+
+        return texto
+
+    except Exception as e:
+
+        st.error(
+            f"Erro ao transcrever o áudio: {e}"
+        )
+
+        return ""
+
+
+# ============================================================
 # 3. CONEXÃO COM O SUPABASE
 # ============================================================
 
@@ -64,9 +98,20 @@ def obter_data_hora():
 
 def limpar_login():
 
-    st.session_state.pop("access_token", None)
-    st.session_state.pop("refresh_token", None)
-    st.session_state.pop("user", None)
+    st.session_state.pop(
+        "access_token",
+        None
+    )
+
+    st.session_state.pop(
+        "refresh_token",
+        None
+    )
+
+    st.session_state.pop(
+        "user",
+        None
+    )
 
 
 def fazer_login(email, senha):
@@ -80,7 +125,10 @@ def fazer_login(email, senha):
 
         if resposta.session is None:
 
-            return False, "Não foi possível iniciar a sessão."
+            return (
+                False,
+                "Não foi possível iniciar a sessão."
+            )
 
         st.session_state.access_token = (
             resposta.session.access_token
@@ -92,9 +140,14 @@ def fazer_login(email, senha):
 
         if resposta.user:
 
-            st.session_state.user = resposta.user
+            st.session_state.user = (
+                resposta.user
+            )
 
-        return True, "Login realizado com sucesso!"
+        return (
+            True,
+            "Login realizado com sucesso!"
+        )
 
     except Exception as e:
 
@@ -136,15 +189,23 @@ def criar_conta(email, senha):
                 resposta.session.refresh_token
             )
 
-            st.session_state.user = resposta.user
+            st.session_state.user = (
+                resposta.user
+            )
 
-            return True, "Conta criada com sucesso!"
+            return (
+                True,
+                "Conta criada com sucesso!"
+            )
 
     except Exception as e:
 
         return False, str(e)
 
-    return False, "Não foi possível criar a conta."
+    return (
+        False,
+        "Não foi possível criar a conta."
+    )
 
 
 # ============================================================
@@ -153,7 +214,8 @@ def criar_conta(email, senha):
 
 if (
     "access_token" in st.session_state
-    and "refresh_token" in st.session_state
+    and
+    "refresh_token" in st.session_state
 ):
 
     try:
@@ -173,7 +235,9 @@ if (
                 resposta.session.refresh_token
             )
 
-        usuario_resposta = supabase.auth.get_user()
+        usuario_resposta = (
+            supabase.auth.get_user()
+        )
 
         if usuario_resposta.user:
 
@@ -456,7 +520,9 @@ if "chats" not in st.session_state:
 
 if "active_chat_id" not in st.session_state:
 
-    st.session_state.active_chat_id = "Conversa 1"
+    st.session_state.active_chat_id = (
+        "Conversa 1"
+    )
 
 
 # ============================================================
@@ -537,7 +603,9 @@ with st.sidebar:
 
         ]
 
-        st.session_state.active_chat_id = new_id
+        st.session_state.active_chat_id = (
+            new_id
+        )
 
         st.rerun()
 
@@ -561,7 +629,9 @@ with st.sidebar:
             use_container_width=True
         ):
 
-            st.session_state.active_chat_id = chat_id
+            st.session_state.active_chat_id = (
+                chat_id
+            )
 
             st.rerun()
 
@@ -635,9 +705,48 @@ for message in messages:
 # 17. ENTRADA DO USUÁRIO
 # ============================================================
 
-prompt = st.chat_input(
-    "Pergunte qualquer coisa ao JARVIS..."
-)
+col1, col2 = st.columns([4, 1])
+
+
+with col1:
+
+    prompt_texto = st.chat_input(
+        "Digite sua mensagem para o JARVIS..."
+    )
+
+
+with col2:
+
+    audio_input = st.audio_input(
+        "🎤 Falar",
+        sample_rate=16000
+    )
+
+
+# ============================================================
+# TRANSFORMAR VOZ EM TEXTO
+# ============================================================
+
+prompt = prompt_texto
+
+
+if audio_input is not None:
+
+    with st.spinner(
+        "🎧 JARVIS está ouvindo..."
+    ):
+
+        texto_transcrito = (
+            transcrever_audio(audio_input)
+        )
+
+    if texto_transcrito:
+
+        prompt = texto_transcrito
+
+        st.info(
+            f"🎤 Você disse: **{texto_transcrito}**"
+        )
 
 
 # ============================================================
