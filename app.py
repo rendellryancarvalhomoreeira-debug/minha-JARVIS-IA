@@ -1,4 +1,6 @@
 import streamlit as st
+import streamlit.components.v1 as components
+import json
 from groq import Groq
 from supabase import create_client
 from datetime import datetime
@@ -26,7 +28,7 @@ client = Groq(
 
 
 # ============================================================
-# 2.1. VOZ - TRANSCRIÇÃO
+# 2.1. VOZ - TRANSCRIÇÃO E FALA
 # ============================================================
 
 VOICE_MODEL = "whisper-large-v3-turbo"
@@ -57,6 +59,71 @@ def transcrever_audio(audio_file):
         )
 
         return ""
+
+
+def falar_texto(texto):
+
+    """
+    Usa a voz disponível no navegador para falar em português.
+    Não precisa de uma API de TTS separada.
+    """
+
+    try:
+
+        texto_seguro = json.dumps(texto, ensure_ascii=False)
+
+        html = f"""
+        <script>
+        const texto = {texto_seguro};
+
+        function falar() {{
+            if (!('speechSynthesis' in window)) {{
+                return;
+            }}
+
+            window.speechSynthesis.cancel();
+
+            const fala = new SpeechSynthesisUtterance(texto);
+            fala.lang = 'pt-BR';
+            fala.rate = 1.0;
+            fala.pitch = 0.95;
+            fala.volume = 1.0;
+
+            const vozes = window.speechSynthesis.getVoices();
+            const vozPortugues = vozes.find(voz =>
+                voz.lang && voz.lang.toLowerCase().startsWith('pt-br')
+            ) || vozes.find(voz =>
+                voz.lang && voz.lang.toLowerCase().startsWith('pt')
+            );
+
+            if (vozPortugues) {{
+                fala.voice = vozPortugues;
+            }}
+
+            window.speechSynthesis.speak(fala);
+        }}
+
+        if (window.speechSynthesis.getVoices().length === 0) {{
+            window.speechSynthesis.addEventListener(
+                'voiceschanged', falar, {{ once: true }}
+            );
+        }} else {{
+            falar();
+        }}
+        </script>
+        """
+
+        components.html(
+            html,
+            height=1,
+            scrolling=False
+        )
+
+    except Exception as e:
+
+        st.warning(
+            f"Não foi possível reproduzir a voz: {e}"
+        )
 
 
 # ============================================================
@@ -98,20 +165,9 @@ def obter_data_hora():
 
 def limpar_login():
 
-    st.session_state.pop(
-        "access_token",
-        None
-    )
-
-    st.session_state.pop(
-        "refresh_token",
-        None
-    )
-
-    st.session_state.pop(
-        "user",
-        None
-    )
+    st.session_state.pop("access_token", None)
+    st.session_state.pop("refresh_token", None)
+    st.session_state.pop("user", None)
 
 
 def fazer_login(email, senha):
@@ -125,10 +181,7 @@ def fazer_login(email, senha):
 
         if resposta.session is None:
 
-            return (
-                False,
-                "Não foi possível iniciar a sessão."
-            )
+            return False, "Não foi possível iniciar a sessão."
 
         st.session_state.access_token = (
             resposta.session.access_token
@@ -140,14 +193,9 @@ def fazer_login(email, senha):
 
         if resposta.user:
 
-            st.session_state.user = (
-                resposta.user
-            )
+            st.session_state.user = resposta.user
 
-        return (
-            True,
-            "Login realizado com sucesso!"
-        )
+        return True, "Login realizado com sucesso!"
 
     except Exception as e:
 
@@ -189,23 +237,15 @@ def criar_conta(email, senha):
                 resposta.session.refresh_token
             )
 
-            st.session_state.user = (
-                resposta.user
-            )
+            st.session_state.user = resposta.user
 
-            return (
-                True,
-                "Conta criada com sucesso!"
-            )
+            return True, "Conta criada com sucesso!"
 
     except Exception as e:
 
         return False, str(e)
 
-    return (
-        False,
-        "Não foi possível criar a conta."
-    )
+    return False, "Não foi possível criar a conta."
 
 
 # ============================================================
@@ -214,8 +254,7 @@ def criar_conta(email, senha):
 
 if (
     "access_token" in st.session_state
-    and
-    "refresh_token" in st.session_state
+    and "refresh_token" in st.session_state
 ):
 
     try:
@@ -235,9 +274,7 @@ if (
                 resposta.session.refresh_token
             )
 
-        usuario_resposta = (
-            supabase.auth.get_user()
-        )
+        usuario_resposta = supabase.auth.get_user()
 
         if usuario_resposta.user:
 
@@ -520,9 +557,7 @@ if "chats" not in st.session_state:
 
 if "active_chat_id" not in st.session_state:
 
-    st.session_state.active_chat_id = (
-        "Conversa 1"
-    )
+    st.session_state.active_chat_id = "Conversa 1"
 
 
 # ============================================================
@@ -603,9 +638,7 @@ with st.sidebar:
 
         ]
 
-        st.session_state.active_chat_id = (
-            new_id
-        )
+        st.session_state.active_chat_id = new_id
 
         st.rerun()
 
@@ -629,9 +662,7 @@ with st.sidebar:
             use_container_width=True
         ):
 
-            st.session_state.active_chat_id = (
-                chat_id
-            )
+            st.session_state.active_chat_id = chat_id
 
             st.rerun()
 
@@ -707,13 +738,11 @@ for message in messages:
 
 col1, col2 = st.columns([4, 1])
 
-
 with col1:
 
     prompt_texto = st.chat_input(
         "Digite sua mensagem para o JARVIS..."
     )
-
 
 with col2:
 
@@ -736,8 +765,8 @@ if audio_input is not None:
         "🎧 JARVIS está ouvindo..."
     ):
 
-        texto_transcrito = (
-            transcrever_audio(audio_input)
+        texto_transcrito = transcrever_audio(
+            audio_input
         )
 
     if texto_transcrito:
@@ -1012,6 +1041,13 @@ if prompt:
             # =================================================
 
             st.markdown(response)
+
+
+            # =================================================
+            # FALAR RESPOSTA EM VOZ ALTA
+            # =================================================
+
+            falar_texto(response)
 
 
             # =================================================
