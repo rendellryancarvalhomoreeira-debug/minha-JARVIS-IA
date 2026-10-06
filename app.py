@@ -2,6 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 from groq import Groq
+from elevenlabs.client import ElevenLabs
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -25,6 +26,21 @@ st.set_page_config(
 client = Groq(
     api_key=st.secrets["GROQ_API_KEY"]
 )
+
+
+# ============================================================
+# 2.0. CONEXÃO COM A ELEVENLABS
+# ============================================================
+
+try:
+
+    eleven_client = ElevenLabs(
+        api_key=st.secrets["ELEVENLABS_API_KEY"]
+    )
+
+except Exception:
+
+    eleven_client = None
 
 
 # ============================================================
@@ -64,111 +80,45 @@ def transcrever_audio(audio_file):
 def falar_texto(texto):
 
     """
-    Cria um botão no navegador para reproduzir a resposta
-    usando a voz disponível no sistema/navegador.
-    A fala só começa depois do clique do usuário, evitando
-    o bloqueio de reprodução automática do navegador.
+    Converte a resposta do JARVIS em áudio usando ElevenLabs.
+    O áudio aparece com controles no navegador, então o usuário
+    decide quando reproduzir a resposta.
     """
+
+    if eleven_client is None:
+
+        st.warning(
+            "ElevenLabs não está configurada. "
+            "Adicione ELEVENLABS_API_KEY aos Secrets do Streamlit."
+        )
+
+        return
 
     try:
 
-        texto_seguro = json.dumps(
-            texto,
-            ensure_ascii=False
+        audio = eleven_client.text_to_speech.convert(
+            text=texto,
+            voice_id="JBFqnCBsd6RMkjVDRZzb",
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128"
         )
 
-        html = f"""
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                font-family: sans-serif;
-            }}
+        if isinstance(audio, bytes):
+            audio_bytes = audio
+        else:
+            audio_bytes = b"".join(audio)
 
-            .container {{
-                display: flex;
-                gap: 8px;
-                align-items: center;
-            }}
+        if audio_bytes:
 
-            button {{
-                border: 1px solid rgba(128,128,128,0.35);
-                border-radius: 8px;
-                padding: 7px 12px;
-                background: transparent;
-                color: inherit;
-                cursor: pointer;
-                font-size: 14px;
-            }}
-
-            button:hover {{
-                background: rgba(128,128,128,0.12);
-            }}
-        </style>
-
-        <div class="container">
-            <button id="ouvir">🔊 Ouvir</button>
-            <button id="parar">⏹ Parar</button>
-        </div>
-
-        <script>
-            const texto = {texto_seguro};
-
-            const botaoOuvir = document.getElementById('ouvir');
-            const botaoParar = document.getElementById('parar');
-
-            function escolherVoz(fala) {{
-                const vozes = window.speechSynthesis.getVoices();
-
-                const vozPortugues = vozes.find(voz =>
-                    voz.lang &&
-                    voz.lang.toLowerCase() === 'pt-br'
-                ) || vozes.find(voz =>
-                    voz.lang &&
-                    voz.lang.toLowerCase().startsWith('pt')
-                );
-
-                if (vozPortugues) {{
-                    fala.voice = vozPortugues;
-                }}
-            }}
-
-            botaoOuvir.addEventListener('click', () => {{
-                if (!('speechSynthesis' in window)) {{
-                    alert('Seu navegador não possui suporte à síntese de voz.');
-                    return;
-                }}
-
-                window.speechSynthesis.cancel();
-
-                const fala = new SpeechSynthesisUtterance(texto);
-                fala.lang = 'pt-BR';
-                fala.rate = 1.0;
-                fala.pitch = 0.95;
-                fala.volume = 1.0;
-
-                escolherVoz(fala);
-                window.speechSynthesis.speak(fala);
-            }});
-
-            botaoParar.addEventListener('click', () => {{
-                if ('speechSynthesis' in window) {{
-                    window.speechSynthesis.cancel();
-                }}
-            }});
-        </script>
-        """
-
-        components.html(
-            html,
-            height=55,
-            scrolling=False
-        )
+            st.audio(
+                audio_bytes,
+                format="audio/mpeg"
+            )
 
     except Exception as e:
 
-        st.warning(
-            f"Não foi possível preparar a voz: {{e}}"
+        st.error(
+            f"Erro ao gerar a voz do JARVIS: {e}"
         )
 
 
