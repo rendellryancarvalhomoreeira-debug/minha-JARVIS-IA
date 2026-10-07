@@ -77,12 +77,30 @@ def transcrever_audio(audio_file):
         return ""
 
 
-def falar_texto(texto, persona=None):
+def obter_voice_id(persona):
 
-    """
-    Converte a resposta do JARVIS em áudio usando a voz
-    associada à persona selecionada.
-    """
+    config = PERSONAS.get(persona, PERSONAS["🤖 JARVIS"])
+
+    # Tenta encontrar a voz pelo nome dentro da conta ElevenLabs.
+    # Assim não precisamos deixar IDs diferentes fixos no código.
+    try:
+        if eleven_client is not None:
+            vozes = eleven_client.voices.get_all().voices
+            nome_procurado = config["voice_name"].strip().lower()
+
+            for voz in vozes:
+                if getattr(voz, "name", "").strip().lower() == nome_procurado:
+                    return voz.voice_id
+    except Exception:
+        pass
+
+    # Fallback para a voz que já funcionava no seu JARVIS.
+    return config["fallback_voice_id"]
+
+
+def falar_texto(texto, persona="🤖 JARVIS"):
+
+    """Converte a resposta em áudio usando a voz da persona escolhida."""
 
     if eleven_client is None:
 
@@ -93,12 +111,9 @@ def falar_texto(texto, persona=None):
 
         return
 
-    if persona is None:
-        persona = carregar_persona()
-
     try:
 
-        voice_id, voice_name = escolher_voz_da_persona(persona)
+        voice_id = obter_voice_id(persona)
 
         audio = eleven_client.text_to_speech.convert(
             text=texto,
@@ -113,21 +128,12 @@ def falar_texto(texto, persona=None):
             audio_bytes = b"".join(audio)
 
         if audio_bytes:
-
-            st.caption(
-                f"🔊 Voz: {voice_name} • Persona: "
-                f"{PERSONAS[persona]['nome']}"
-            )
-
-            st.audio(
-                audio_bytes,
-                format="audio/mpeg"
-            )
+            st.audio(audio_bytes, format="audio/mpeg")
 
     except Exception as e:
 
         st.error(
-            f"Erro ao gerar a voz do JARVIS: {e}"
+            f"Erro ao gerar a voz da persona {persona}: {e}"
         )
 
 
@@ -149,183 +155,45 @@ MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # ============================================================
-# 4.1. PERSONAS DO JARVIS
+# 4.1. PERSONAS - VOZ + PERSONALIDADE
 # ============================================================
 
-# Cada persona combina personalidade + uma voz preferida.
-# A voz é procurada pelo nome entre as vozes disponíveis
-# na conta ElevenLabs. Se não for encontrada, usamos a voz
-# atual do JARVIS como fallback.
-
 PERSONAS = {
-
     "🤖 JARVIS": {
-        "nome": "JARVIS",
-        "descricao": "Elegante, profissional e analítico",
-        "voz_preferida": ["George", "Daniel"],
-        "personalidade": (
-            "Você é JARVIS. Seja elegante, profissional, "
-            "educado, analítico e extremamente prestativo. "
-            "Fale de forma natural e sofisticada, sem ser "
-            "excessivamente formal. Seja objetivo quando a "
-            "pergunta for simples e detalhado quando necessário."
+        "description": "Elegante, profissional e analítico",
+        "voice_name": "JARVIS",
+        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "prompt": (
+            "Você é JARVIS. Mantenha uma personalidade elegante, "
+            "profissional, analítica e extremamente prestativa. "
+            "Fale com calma, precisão e confiança. Seja sofisticado "
+            "sem parecer artificial ou excessivamente formal."
         )
     },
-
     "😎 FRIDAY": {
-        "nome": "FRIDAY",
-        "descricao": "Amigável, descontraída e simpática",
-        "voz_preferida": ["Rachel", "Aria"],
-        "personalidade": (
-            "Você é FRIDAY. Seja amigável, natural, descontraída "
-            "e simpática. Converse de forma leve, mas continue "
-            "inteligente e útil. Evite respostas artificiais."
+        "description": "Amigável, descontraída e inteligente",
+        "voice_name": "FRIDAY",
+        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "prompt": (
+            "Você é FRIDAY, uma assistente inteligente, amigável e "
+            "descontraída. Converse de forma natural, simpática e "
+            "confiante. Pode usar um pouco mais de leveza e humor "
+            "quando for apropriado, sem perder a utilidade."
         )
     },
-
-    "🧪 SCIENTIST": {
-        "nome": "SCIENTIST",
-        "descricao": "Curiosa, técnica e detalhista",
-        "voz_preferida": ["Alice", "Brian", "Daniel"],
-        "personalidade": (
-            "Você é SCIENTIST. Pense como um cientista: seja "
-            "curioso, lógico, preciso e baseado em evidências. "
-            "Explique conceitos técnicos de forma clara e "
-            "diferencie fatos de hipóteses."
-        )
-    },
-
-    "🎓 PROFESSOR": {
-        "nome": "PROFESSOR",
-        "descricao": "Paciente, didático e explicativo",
-        "voz_preferida": ["Daniel", "George", "Brian"],
-        "personalidade": (
-            "Você é PROFESSOR. Seja paciente, didático e claro. "
-            "Explique assuntos difíceis em etapas simples, use "
-            "exemplos quando ajudarem e confirme o raciocínio "
-            "sem tratar o usuário com condescendência."
-        )
-    },
-
-    "⚡ TACTICAL": {
-        "nome": "TACTICAL",
-        "descricao": "Estratégico, direto e focado",
-        "voz_preferida": ["Brian", "George", "Daniel"],
-        "personalidade": (
-            "Você é TACTICAL. Seja estratégico, direto e focado. "
-            "Priorize informações úteis e ações práticas. Evite "
-            "enrolação. Quando houver várias opções, compare-as "
-            "e indique claramente os pontos fortes e fracos."
-        )
-    },
-
-    "🧠 ORACLE": {
-        "nome": "ORACLE",
-        "descricao": "Analítica, reflexiva e calculada",
-        "voz_preferida": ["Aria", "Rachel", "Alice"],
-        "personalidade": (
-            "Você é ORACLE. Seja analítico, reflexivo e calculado. "
-            "Observe relações entre informações, considere "
-            "diferentes possibilidades e explique seu raciocínio "
-            "de maneira clara, sem fingir certeza quando houver "
-            "incerteza."
-        )
-    },
-
     "💪 KRATOS": {
-        "nome": "KRATOS",
-        "descricao": "Sério, disciplinado e determinado",
-        "voz_preferida": ["George", "Brian", "Daniel"],
-        "personalidade": (
-            "Você é uma persona inspirada no estilo de Kratos: "
-            "sério, disciplinado, determinado e direto. Prefira "
-            "frases firmes e objetivas. Valorize disciplina, "
-            "persistência e responsabilidade. Não exagere em "
-            "frases dramáticas e não faça ameaças. Quando uma "
-            "resposta curta for suficiente, seja curto."
+        "description": "Sério, disciplinado e determinado",
+        "voice_name": "KRATOS",
+        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "prompt": (
+            "Você possui uma personalidade inspirada em um guerreiro "
+            "sério, disciplinado e determinado. Responda de forma "
+            "direta, firme e controlada. Evite exageros, piadas e "
+            "frases desnecessariamente longas. Transmita força, "
+            "experiência e determinação, mantendo respeito pelo usuário."
         )
     }
 }
-
-
-PERSONA_PADRAO = "🤖 JARVIS"
-
-
-# ============================================================
-# 4.2. FUNÇÕES DE PERSONA E VOZ
-# ============================================================
-
-def obter_vozes_elevenlabs():
-
-    """Retorna as vozes disponíveis na conta ElevenLabs."""
-
-    if eleven_client is None:
-        return []
-
-    try:
-
-        resultado = eleven_client.voices.get_all()
-        vozes = getattr(resultado, "voices", []) or []
-
-        return [
-            {
-                "id": getattr(voz, "voice_id", ""),
-                "nome": getattr(voz, "name", "")
-            }
-            for voz in vozes
-            if getattr(voz, "voice_id", "")
-        ]
-
-    except Exception:
-
-        return []
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def obter_vozes_cacheadas():
-
-    return obter_vozes_elevenlabs()
-
-
-def escolher_voz_da_persona(persona):
-
-    configuracao = PERSONAS[persona]
-    preferencias = configuracao["voz_preferida"]
-
-    vozes = obter_vozes_cacheadas()
-
-    if not vozes:
-        return "JBFqnCBsd6RMkjVDRZzb", "George"
-
-    mapa = {
-        voz["nome"].strip().lower(): voz["id"]
-        for voz in vozes
-        if voz["nome"]
-    }
-
-    for nome in preferencias:
-
-        voice_id = mapa.get(nome.lower())
-
-        if voice_id:
-            return voice_id, nome
-
-    primeira = vozes[0]
-
-    return primeira["id"], primeira["nome"]
-
-
-def salvar_persona_local(persona):
-
-    st.session_state.persona = persona
-
-
-def carregar_persona():
-
-    if "persona" not in st.session_state:
-        st.session_state.persona = PERSONA_PADRAO
-
-    return st.session_state.persona
 
 
 # ============================================================
@@ -630,18 +498,12 @@ user_email = usuario.email
 
 
 # ============================================================
-# 9.1. PERSONA ATUAL
+# 9.1. CONFIGURAÇÃO DA PERSONA DO USUÁRIO
 # ============================================================
 
-persona_atual = carregar_persona()
-
-
-def carregar_persona_usuario():
-
-    """Carrega a persona salva no Supabase, quando disponível."""
+def carregar_persona():
 
     try:
-
         resultado = (
             supabase
             .table("user_settings")
@@ -652,40 +514,32 @@ def carregar_persona_usuario():
         )
 
         if resultado.data and resultado.data.get("persona") in PERSONAS:
-
-            st.session_state.persona = resultado.data["persona"]
             return resultado.data["persona"]
 
     except Exception:
-
-        # Se a tabela ainda não existir, continuamos usando
-        # a sessão normalmente. O app não quebra.
+        # Se a tabela ainda não existir, o JARVIS continua funcionando
+        # usando a configuração desta sessão.
         pass
 
-    return carregar_persona()
+    return "🤖 JARVIS"
 
 
-def salvar_persona_usuario(persona):
-
-    """Salva a persona do usuário no Supabase."""
-
-    st.session_state.persona = persona
+def salvar_persona(persona):
 
     try:
-
         supabase.table("user_settings").upsert({
             "user_id": user_id,
             "persona": persona,
             "updated_at": datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat()
         }).execute()
-
+        return True
     except Exception:
+        # A persona continua funcionando mesmo sem a tabela opcional.
+        return False
 
-        # A seleção continua funcionando mesmo sem a tabela.
-        pass
 
-
-persona_atual = carregar_persona_usuario()
+if "persona" not in st.session_state:
+    st.session_state.persona = carregar_persona()
 
 
 # ============================================================
@@ -820,61 +674,47 @@ with st.sidebar:
 
 
     # ========================================================
-    # CONTA
-    # ========================================================
-
-    st.subheader("👤 Conta")
-
-    st.write(user_email)
-
-
-    st.markdown("---")
-
-
-    # ========================================================
     # PERSONA
     # ========================================================
 
     st.subheader("🎭 Persona")
 
     persona_selecionada = st.selectbox(
-        "Escolha seu assistente",
+        "Escolha quem vai falar com você:",
         list(PERSONAS.keys()),
-        index=list(PERSONAS.keys()).index(persona_atual),
-        key="persona_selector"
+        index=list(PERSONAS.keys()).index(st.session_state.persona),
+        format_func=lambda nome: f"{nome} — {PERSONAS[nome]['description']}"
     )
 
-    if persona_selecionada != persona_atual:
-
-        salvar_persona_usuario(persona_selecionada)
-        persona_atual = persona_selecionada
+    if persona_selecionada != st.session_state.persona:
+        st.session_state.persona = persona_selecionada
+        salvar_persona(persona_selecionada)
         st.rerun()
 
     st.caption(
-        PERSONAS[persona_atual]["descricao"]
+        f"🧠 Personalidade: {PERSONAS[st.session_state.persona]['description']}"
     )
 
-    voz_id_preview, voz_nome_preview = (
-        escolher_voz_da_persona(persona_atual)
-    )
-
-    st.caption(
-        f"🔊 Voz: {voz_nome_preview}"
-    )
-
-    if st.button(
-        "🔊 Testar voz",
-        use_container_width=True
-    ):
-
-        falar_texto(
-            f"Olá. Eu sou {PERSONAS[persona_atual]['nome']}. "
-            "Estou pronto para ajudar.",
-            persona_atual
-        )
-
+    if st.button("🔊 Testar voz", use_container_width=True):
+        if eleven_client is None:
+            st.warning("Configure ELEVENLABS_API_KEY nos Secrets.")
+        else:
+            texto_teste = {
+                "🤖 JARVIS": "Olá. Sou JARVIS. Sistemas operacionais e prontos.",
+                "😎 FRIDAY": "Oi! Sou FRIDAY. Tudo pronto por aqui.",
+                "💪 KRATOS": "Estou pronto. Diga o que precisa ser feito."
+            }[st.session_state.persona]
+            falar_texto(texto_teste, st.session_state.persona)
 
     st.markdown("---")
+
+    # ========================================================
+    # CONTA
+    # ========================================================
+
+    st.subheader("👤 Conta")
+
+    st.write(user_email)
 
 
     # ========================================================
@@ -1180,17 +1020,16 @@ if prompt:
 
             "content": (
 
-                "Você é JARVIS, um assistente virtual "
-                "avançado, inteligente, prestativo, "
-                "educado e natural. "
+                PERSONAS[st.session_state.persona]["prompt"] + " "
+
+                "Você é um assistente virtual avançado, "
+                "inteligente, prestativo, educado e natural. "
 
                 "Seu objetivo é conversar com o usuário "
                 "de maneira semelhante a um assistente "
                 "pessoal sofisticado. "
 
-                + PERSONAS[persona_atual]["personalidade"] + " "
-
-                + "Responda sempre em português do Brasil, "
+                "Responda sempre em português do Brasil, "
                 "a menos que o usuário peça outro idioma. "
 
                 f"A data atual no Brasil é {data_atual}. "
@@ -1342,7 +1181,7 @@ if prompt:
             # BOTÕES DE VOZ
             # =================================================
 
-            falar_texto(response, persona_atual)
+            falar_texto(response, st.session_state.persona)
 
 
             # =================================================
