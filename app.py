@@ -2,7 +2,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 from groq import Groq
-from elevenlabs.client import ElevenLabs
+import io
+import numpy as np
+import soundfile as sf
+
+try:
+    from kokoro import KPipeline
+except Exception:
+    KPipeline = None
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -29,111 +36,79 @@ client = Groq(
 
 
 # ============================================================
-# 2.0. CONEXÃO COM A ELEVENLABS
+# 2.0. KOKORO TTS - VOZ LOCAL E GRATUITA
 # ============================================================
 
-try:
+@st.cache_resource(show_spinner=False)
+def carregar_pipeline_kokoro():
 
-    eleven_client = ElevenLabs(
-        api_key=st.secrets["ELEVENLABS_API_KEY"]
-    )
+    if KPipeline is None:
+        return None
 
-except Exception:
-
-    eleven_client = None
-
-
-# ============================================================
-# 2.1. VOZ - TRANSCRIÇÃO E FALA
-# ============================================================
-
-VOICE_MODEL = "whisper-large-v3-turbo"
-
-
-def transcrever_audio(audio_file):
-
-    try:
-
-        audio_bytes = audio_file.getvalue()
-
-        transcription = client.audio.transcriptions.create(
-            file=("audio.wav", audio_bytes),
-            model=VOICE_MODEL,
-            language="pt",
-            response_format="json",
-            temperature=0
-        )
-
-        texto = transcription.text.strip()
-
-        return texto
-
-    except Exception as e:
-
-        st.error(
-            f"Erro ao transcrever o áudio: {e}"
-        )
-
-        return ""
-
-
-def obter_voice_id(persona):
-
-    config = PERSONAS.get(persona, PERSONAS["🤖 JARVIS"])
-
-    # Tenta encontrar a voz pelo nome dentro da conta ElevenLabs.
-    # Assim não precisamos deixar IDs diferentes fixos no código.
-    try:
-        if eleven_client is not None:
-            vozes = eleven_client.voices.get_all().voices
-            nome_procurado = config["voice_name"].strip().lower()
-
-            for voz in vozes:
-                if getattr(voz, "name", "").strip().lower() == nome_procurado:
-                    return voz.voice_id
-    except Exception:
-        pass
-
-    # Fallback para a voz que já funcionava no seu JARVIS.
-    return config["fallback_voice_id"]
+    return KPipeline(lang_code="p")
 
 
 def falar_texto(texto, persona="🤖 JARVIS"):
 
-    """Converte a resposta em áudio usando a voz da persona escolhida."""
+    """Converte a resposta em áudio usando Kokoro em português brasileiro."""
 
-    if eleven_client is None:
+    if not texto:
+        return
 
-        st.warning(
-            "ElevenLabs não está configurada. "
-            "Adicione ELEVENLABS_API_KEY aos Secrets do Streamlit."
+    if KPipeline is None:
+        st.error(
+            "Kokoro não está instalado. Adicione 'kokoro' e 'soundfile' "
+            "ao requirements.txt e 'espeak-ng' ao packages.txt."
         )
-
         return
 
     try:
+        pipeline = carregar_pipeline_kokoro()
+        voz = PERSONAS.get(
+            persona,
+            PERSONAS["🤖 JARVIS"]
+        )["voice"]
 
-        voice_id = obter_voice_id(persona)
+        partes_audio = []
 
-        audio = eleven_client.text_to_speech.convert(
-            text=texto,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128"
+        # O Kokoro pode dividir textos maiores em vários trechos.
+        generator = pipeline(
+            texto,
+            voice=voz
         )
 
-        if isinstance(audio, bytes):
-            audio_bytes = audio
-        else:
-            audio_bytes = b"".join(audio)
+        for _, _, audio in generator:
+            partes_audio.append(audio)
 
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/mpeg")
+        if not partes_audio:
+            st.warning("O Kokoro não gerou áudio para esta resposta.")
+            return
+
+        audio_completo = np.concatenate(partes_audio)
+
+        buffer = io.BytesIO()
+        sf.write(
+            buffer,
+            audio_completo,
+            24000,
+            format="WAV"
+        )
+
+        audio_bytes = buffer.getvalue()
+
+        st.caption(
+            f"🔊 Voz: {voz} • Persona: "
+            f"{PERSONAS.get(persona, PERSONAS['🤖 JARVIS'])['description']}"
+        )
+
+        st.audio(
+            audio_bytes,
+            format="audio/wav"
+        )
 
     except Exception as e:
-
         st.error(
-            f"Erro ao gerar a voz da persona {persona}: {e}"
+            f"Erro ao gerar a voz com o Kokoro: {e}"
         )
 
 
@@ -161,8 +136,7 @@ MODEL_NAME = "openai/gpt-oss-20b"
 PERSONAS = {
     "🤖 JARVIS": {
         "description": "Elegante, profissional e analítico",
-        "voice_name": "JARVIS",
-        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "voice": "pm_alex",
         "prompt": (
             "Você é JARVIS. Mantenha uma personalidade elegante, "
             "profissional, analítica e extremamente prestativa. "
@@ -172,8 +146,7 @@ PERSONAS = {
     },
     "😎 FRIDAY": {
         "description": "Amigável, descontraída e inteligente",
-        "voice_name": "FRIDAY",
-        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "voice": "pf_dora",
         "prompt": (
             "Você é FRIDAY, uma assistente inteligente, amigável e "
             "descontraída. Converse de forma natural, simpática e "
@@ -183,8 +156,7 @@ PERSONAS = {
     },
     "💪 KRATOS": {
         "description": "Sério, disciplinado e determinado",
-        "voice_name": "KRATOS",
-        "fallback_voice_id": "JBFqnCBsd6RMkjVDRZzb",
+        "voice": "pm_santa",
         "prompt": (
             "Você possui uma personalidade inspirada em um guerreiro "
             "sério, disciplinado e determinado. Responda de forma "
@@ -696,15 +668,12 @@ with st.sidebar:
     )
 
     if st.button("🔊 Testar voz", use_container_width=True):
-        if eleven_client is None:
-            st.warning("Configure ELEVENLABS_API_KEY nos Secrets.")
-        else:
-            texto_teste = {
-                "🤖 JARVIS": "Olá. Sou JARVIS. Sistemas operacionais e prontos.",
-                "😎 FRIDAY": "Oi! Sou FRIDAY. Tudo pronto por aqui.",
-                "💪 KRATOS": "Estou pronto. Diga o que precisa ser feito."
-            }[st.session_state.persona]
-            falar_texto(texto_teste, st.session_state.persona)
+        texto_teste = {
+            "🤖 JARVIS": "Olá. Sou JARVIS. Sistemas operacionais e prontos.",
+            "😎 FRIDAY": "Oi! Sou FRIDAY. Tudo pronto por aqui.",
+            "💪 KRATOS": "Estou pronto. Diga o que precisa ser feito."
+        }[st.session_state.persona]
+        falar_texto(texto_teste, st.session_state.persona)
 
     st.markdown("---")
 
