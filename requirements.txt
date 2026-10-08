@@ -1,6 +1,6 @@
 streamlit
 groq
 supabase
-elevenlabs
 kokoro
 soundfile
+numpy
