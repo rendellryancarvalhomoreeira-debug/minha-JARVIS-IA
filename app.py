@@ -64,6 +64,11 @@ def limpar_texto_para_voz(texto):
     texto = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", texto)
     texto = re.sub(r"[*_~`#]", "", texto)
 
+    # Em números isolados de dois dígitos, remove o zero à esquerda:
+    # "09" vira "9" para o Kokoro dizer "nove", não "zero nove".
+    # Não altera números maiores nem valores ligados a datas/horários/códigos.
+    texto = re.sub(r"(?<![\d/:-])0([1-9])(?![\d/:-])", r"\1", texto)
+
     # Normaliza espaços para uma fala mais natural.
     texto = re.sub(r"\s+", " ", texto).strip()
     return texto
