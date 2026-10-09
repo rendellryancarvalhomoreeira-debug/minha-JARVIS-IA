@@ -74,9 +74,15 @@ def limpar_texto_para_voz(texto):
     return texto
 
 
+def separar_frases_para_voz(texto):
+    """Divide o texto em frases para inserir pausas naturais no áudio."""
+    frases = re.split(r"(?<=[.!?])\s+", texto.strip())
+    return [frase.strip() for frase in frases if frase.strip()]
+
+
 def falar_texto(texto, persona="🤖 JARVIS"):
 
-    """Converte a resposta em áudio usando Kokoro em português brasileiro."""
+    """Converte a resposta em áudio com pausas entre frases usando Kokoro."""
 
     texto = limpar_texto_para_voz(texto)
     if not texto:
@@ -97,15 +103,21 @@ def falar_texto(texto, persona="🤖 JARVIS"):
         )["voice"]
 
         partes_audio = []
+        frases = separar_frases_para_voz(texto)
+        pausa_curta = np.zeros(int(24000 * 0.20), dtype=np.float32)
 
-        # O Kokoro pode dividir textos maiores em vários trechos.
-        generator = pipeline(
-            texto,
-            voice=voz
-        )
+        # Sintetiza cada frase separadamente para que as pausas sejam audíveis.
+        for indice, frase in enumerate(frases):
+            generator = pipeline(frase, voice=voz)
+            audio_frase = []
 
-        for _, _, audio in generator:
-            partes_audio.append(audio)
+            for _, _, audio in generator:
+                audio_frase.append(np.asarray(audio, dtype=np.float32))
+
+            if audio_frase:
+                partes_audio.append(np.concatenate(audio_frase))
+                if indice < len(frases) - 1:
+                    partes_audio.append(pausa_curta)
 
         if not partes_audio:
             st.warning("O Kokoro não gerou áudio para esta resposta.")
