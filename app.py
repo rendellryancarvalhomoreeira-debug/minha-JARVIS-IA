@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import json
+import re
 from groq import Groq
 import io
 import numpy as np
@@ -48,10 +49,31 @@ def carregar_pipeline_kokoro():
     return KPipeline(lang_code="p")
 
 
+def limpar_texto_para_voz(texto):
+    """Remove marcações Markdown que não devem ser pronunciadas."""
+    if not texto:
+        return ""
+
+    texto = str(texto)
+
+    # Mantém o texto de links Markdown, removendo a URL.
+    texto = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", texto)
+
+    # Remove blocos de código e marcações comuns de Markdown.
+    texto = re.sub(r"```[\s\S]*?```", " ", texto)
+    texto = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", texto)
+    texto = re.sub(r"[*_~`#]", "", texto)
+
+    # Normaliza espaços para uma fala mais natural.
+    texto = re.sub(r"\s+", " ", texto).strip()
+    return texto
+
+
 def falar_texto(texto, persona="🤖 JARVIS"):
 
     """Converte a resposta em áudio usando Kokoro em português brasileiro."""
 
+    texto = limpar_texto_para_voz(texto)
     if not texto:
         return
 
