@@ -794,7 +794,10 @@ for message in messages:
 # 16.1. ATIVAÇÃO POR VOZ NO NAVEGADOR
 # ============================================================
 
-voice_payload = voice_listener_component(key="orion_voice_listener")
+voice_payload = voice_listener_component(
+    key="orion_voice_listener",
+    default={"text": "", "nonce": 0, "enabled": False},
+)
 voice_prompt = None
 
 if isinstance(voice_payload, dict):
@@ -808,20 +811,9 @@ if isinstance(voice_payload, dict):
         st.session_state.last_orion_voice_nonce = voice_nonce
         voice_prompt = voice_text
 
-col1, col2 = st.columns([4, 1])
-
-with col1:
-
-    prompt_texto = st.chat_input(
-        "Digite sua mensagem para o ORION..."
-    )
-
-with col2:
-
-    audio_input = st.audio_input(
-        "🎤 Falar",
-        sample_rate=16000
-    )
+prompt_texto = st.chat_input(
+    "Digite sua mensagem para o ORION..."
+)
 
 
 # ============================================================
@@ -835,23 +827,8 @@ if voice_prompt:
     st.info(f"🎙️ Chamado do ORION reconhecido: **{voice_prompt}**")
 
 
-if audio_input is not None and not voice_prompt and not prompt_texto:
-
-    with st.spinner(
-        "🎧 ORION está ouvindo..."
-    ):
-
-        texto_transcrito = transcrever_audio(
-            audio_input
-        )
-
-    if texto_transcrito:
-
-        prompt = texto_transcrito
-
-        st.info(
-            f"🎤 Você disse: **{texto_transcrito}**"
-        )
+# O reconhecimento de voz agora é feito no navegador pelo componente
+# orion_voice_component. Não é necessário enviar uma gravação manual.
 
 
 # ============================================================
