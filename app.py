@@ -75,8 +75,7 @@ def limpar_texto_para_voz(texto):
 
 
 def falar_texto(texto, persona="🤖 JARVIS"):
-
-    """Gera a fala em uma única síntese para manter timbre e fluidez."""
+    """Gera áudio Kokoro e prepara o sinal para evitar clipping e distorção."""
 
     texto = limpar_texto_para_voz(texto)
     if not texto:
@@ -91,38 +90,48 @@ def falar_texto(texto, persona="🤖 JARVIS"):
 
     try:
         pipeline = carregar_pipeline_kokoro()
-        voz = PERSONAS.get(
-            persona,
-            PERSONAS["🤖 JARVIS"]
-        )["voice"]
+        if pipeline is None:
+            st.error("Não foi possível carregar o Kokoro. Verifique as dependências.")
+            return
 
-        # Sintetiza a resposta inteira de uma vez. Isso evita mudanças de
-        # timbre e cortes perceptíveis que podem surgir ao gerar cada frase
-        # separadamente. A pontuação original guia as pausas naturais.
+        configuracao_persona = PERSONAS.get(persona, PERSONAS["🤖 JARVIS"])
+        voz = configuracao_persona["voice"]
+
         partes_audio = []
-        generator = pipeline(texto, voice=voz)
-
-        for _, _, audio in generator:
-            partes_audio.append(np.asarray(audio, dtype=np.float32))
+        for _, _, audio in pipeline(texto, voice=voz):
+            # Converte de forma consistente para um vetor NumPy mono em float32.
+            if hasattr(audio, "detach"):
+                audio = audio.detach().cpu().numpy()
+            trecho = np.asarray(audio, dtype=np.float32).reshape(-1)
+            if trecho.size:
+                partes_audio.append(trecho)
 
         if not partes_audio:
             st.warning("O Kokoro não gerou áudio para esta resposta.")
             return
 
-        audio_completo = np.concatenate(partes_audio)
+        audio_completo = np.concatenate(partes_audio).astype(np.float32, copy=False)
 
-        buffer = io.BytesIO()
-        sf.write(
-            buffer,
-            audio_completo,
-            24000,
-            format="WAV"
+        # Evita que valores inválidos causem estalos ou áudio distorcido.
+        audio_completo = np.nan_to_num(
+            audio_completo, nan=0.0, posinf=0.0, neginf=0.0
         )
+
+        # Remove um possível deslocamento contínuo do sinal (DC offset).
+        audio_completo = audio_completo - np.mean(audio_completo)
+
+        # Normalização suave: deixa margem contra clipping na reprodução.
+        pico = float(np.max(np.abs(audio_completo))) if audio_completo.size else 0.0
+        if pico > 0.0:
+            audio_completo = audio_completo * (0.90 / pico)
+
+        # O Kokoro gera áudio a 24 kHz; manter 24000 evita alterar a velocidade/timbre.
+        buffer = io.BytesIO()
+        sf.write(buffer, audio_completo, 24000, format="WAV", subtype="PCM_16")
         audio_bytes = buffer.getvalue()
 
         st.caption(
-            f"🔊 Voz: {voz} • Persona: "
-            f"{PERSONAS.get(persona, PERSONAS['🤖 JARVIS'])['description']}"
+            f"🔊 Voz: {voz} • Persona: {configuracao_persona['description']}"
         )
         st.audio(audio_bytes, format="audio/wav")
 
