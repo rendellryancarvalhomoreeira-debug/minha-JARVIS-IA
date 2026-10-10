@@ -163,7 +163,8 @@ MODEL_NAME = "openai/gpt-oss-20b"
 PERSONAS = {
     "🤖 JARVIS": {
         "description": "Elegante, profissional e analítico",
-        "voice": "pm_alex",
+        # Voz masculina alternativa do Kokoro para testar um timbre diferente.
+        "voice": "pm_santa",
         "prompt": (
             "Você é JARVIS. Mantenha uma personalidade elegante, "
             "profissional, analítica e extremamente prestativa. "
