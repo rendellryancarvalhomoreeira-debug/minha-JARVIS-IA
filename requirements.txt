@@ -1,6 +1,4 @@
 streamlit
 groq
 supabase
-kokoro
-soundfile
-numpy
+edge-tts
