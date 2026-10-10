@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 # ============================================================
 
 st.set_page_config(
-    page_title="JARVIS AI",
+    page_title="ORION AI",
     page_icon="🤖",
     layout="wide"
 )
@@ -74,7 +74,7 @@ def limpar_texto_para_voz(texto):
     return texto
 
 
-def falar_texto(texto, persona="🤖 JARVIS"):
+def falar_texto(texto, persona="🔷 ORION"):
     """Gera áudio Kokoro e prepara o sinal para evitar clipping e distorção."""
 
     texto = limpar_texto_para_voz(texto)
@@ -94,7 +94,7 @@ def falar_texto(texto, persona="🤖 JARVIS"):
             st.error("Não foi possível carregar o Kokoro. Verifique as dependências.")
             return
 
-        configuracao_persona = PERSONAS.get(persona, PERSONAS["🤖 JARVIS"])
+        configuracao_persona = PERSONAS.get(persona, PERSONAS["🔷 ORION"])
         voz = configuracao_persona["voice"]
 
         partes_audio = []
@@ -161,37 +161,18 @@ MODEL_NAME = "openai/gpt-oss-20b"
 # ============================================================
 
 PERSONAS = {
-    "🤖 JARVIS": {
-        "description": "Elegante, profissional e analítico",
-        # Retorna à voz masculina pm_alex, com timbre menos envelhecido.
-        "voice": "pm_alex",
+    "🔷 ORION": {
+        "description": "Voz original, serena, natural e tecnológica",
+        # Mistura experimental de dois timbres masculinos do Kokoro.
+        # Isso cria uma combinação própria, não uma clonagem de ator.
+        "voice": "pm_alex,pm_santa",
         "prompt": (
-            "Você é JARVIS, um assistente de IA elegante, calmo e sofisticado. "
-            "Responda com clareza, confiança e precisão, usando frases naturais "
-            "e bem pontuadas. Prefira um ritmo verbal sereno, sem pressa, "
-            "sem exagerar na formalidade e sem soar teatral. Seja conciso "
-            "quando possível e mantenha uma postura profissional e prestativa."
-        )
-    },
-    "😎 FRIDAY": {
-        "description": "Amigável, descontraída e inteligente",
-        "voice": "pf_dora",
-        "prompt": (
-            "Você é FRIDAY, uma assistente inteligente, amigável e "
-            "descontraída. Converse de forma natural, simpática e "
-            "confiante. Pode usar um pouco mais de leveza e humor "
-            "quando for apropriado, sem perder a utilidade."
-        )
-    },
-    "💪 KRATOS": {
-        "description": "Sério, disciplinado e determinado",
-        "voice": "pm_santa",
-        "prompt": (
-            "Você possui uma personalidade inspirada em um guerreiro "
-            "sério, disciplinado e determinado. Responda de forma "
-            "direta, firme e controlada. Evite exageros, piadas e "
-            "frases desnecessariamente longas. Transmita força, "
-            "experiência e determinação, mantendo respeito pelo usuário."
+            "Você é ORION: Orquestrador de Raciocínio, Integração, Organização e Navegação. "
+            "Você é um assistente de inteligência artificial original, confiável e prestativo. "
+            "Fale em português brasileiro com clareza, naturalidade, calma e confiança. "
+            "Use frases bem pontuadas e um ritmo sereno, com uma personalidade moderna, "
+            "elegante e tecnológica, sem soar teatral, excessivamente formal ou robótica. "
+            "Seja objetivo quando possível e explique com cuidado quando necessário."
         )
     }
 }
@@ -347,9 +328,9 @@ if (
 
 if "user" not in st.session_state:
 
-    st.title("🤖 JARVIS AI")
+    st.title("🔷 ORION AI")
 
-    st.subheader("🔐 Acesso ao JARVIS")
+    st.subheader("🔐 Acesso ao ORION")
 
     aba_login, aba_cadastro = st.tabs([
         "Entrar",
@@ -499,48 +480,10 @@ user_email = usuario.email
 
 
 # ============================================================
-# 9.1. CONFIGURAÇÃO DA PERSONA DO USUÁRIO
+# 9.1. IDENTIDADE FIXA DO ORION
 # ============================================================
 
-def carregar_persona():
-
-    try:
-        resultado = (
-            supabase
-            .table("user_settings")
-            .select("persona")
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-        if resultado.data and resultado.data.get("persona") in PERSONAS:
-            return resultado.data["persona"]
-
-    except Exception:
-        # Se a tabela ainda não existir, o JARVIS continua funcionando
-        # usando a configuração desta sessão.
-        pass
-
-    return "🤖 JARVIS"
-
-
-def salvar_persona(persona):
-
-    try:
-        supabase.table("user_settings").upsert({
-            "user_id": user_id,
-            "persona": persona,
-            "updated_at": datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat()
-        }).execute()
-        return True
-    except Exception:
-        # A persona continua funcionando mesmo sem a tabela opcional.
-        return False
-
-
-if "persona" not in st.session_state:
-    st.session_state.persona = carregar_persona()
+st.session_state.persona = "🔷 ORION"
 
 
 # ============================================================
@@ -640,7 +583,7 @@ if "chats" not in st.session_state:
                 "role": "system",
 
                 "content": (
-                    "Você é o JARVIS, um assistente virtual "
+                    "Você é o ORION, um assistente virtual "
                     "inteligente, prestativo e amigável."
                 )
             }
@@ -665,7 +608,7 @@ if "active_chat_id" not in st.session_state:
 
 with st.sidebar:
 
-    st.title("🤖 JARVIS AI")
+    st.title("🔷 ORION AI")
 
     st.caption(
         f"Modelo: {MODEL_NAME}"
@@ -674,35 +617,14 @@ with st.sidebar:
     st.markdown("---")
 
 
-    # ========================================================
-    # PERSONA
-    # ========================================================
+    st.subheader("🔷 ORION")
+    st.caption(PERSONAS["🔷 ORION"]["description"])
 
-    st.subheader("🎭 Persona")
-
-    persona_selecionada = st.selectbox(
-        "Escolha quem vai falar com você:",
-        list(PERSONAS.keys()),
-        index=list(PERSONAS.keys()).index(st.session_state.persona),
-        format_func=lambda nome: f"{nome} — {PERSONAS[nome]['description']}"
-    )
-
-    if persona_selecionada != st.session_state.persona:
-        st.session_state.persona = persona_selecionada
-        salvar_persona(persona_selecionada)
-        st.rerun()
-
-    st.caption(
-        f"🧠 Personalidade: {PERSONAS[st.session_state.persona]['description']}"
-    )
-
-    if st.button("🔊 Testar voz", use_container_width=True):
-        texto_teste = {
-            "🤖 JARVIS": "Olá. Sou JARVIS. Sistemas operacionais e prontos.",
-            "😎 FRIDAY": "Oi! Sou FRIDAY. Tudo pronto por aqui.",
-            "💪 KRATOS": "Estou pronto. Diga o que precisa ser feito."
-        }[st.session_state.persona]
-        falar_texto(texto_teste, st.session_state.persona)
+    if st.button("🔊 Testar voz do ORION", use_container_width=True):
+        falar_texto(
+            "Olá. Eu sou ORION: Orquestrador de Raciocínio, Integração, Organização e Navegação. Estou pronto para ajudar.",
+            "🔷 ORION"
+        )
 
     st.markdown("---")
 
@@ -762,7 +684,7 @@ with st.sidebar:
                 "role": "system",
 
                 "content": (
-                    "Você é o JARVIS, um assistente virtual "
+                    "Você é o ORION, um assistente virtual "
                     "inteligente, prestativo e amigável."
                 )
             }
@@ -842,7 +764,7 @@ messages = (
 # ============================================================
 
 st.title(
-    f"🤖 JARVIS AI - {current_chat_id}"
+    f"🔷 ORION AI - {current_chat_id}"
 )
 
 
@@ -872,7 +794,7 @@ col1, col2 = st.columns([4, 1])
 with col1:
 
     prompt_texto = st.chat_input(
-        "Digite sua mensagem para o JARVIS..."
+        "Digite sua mensagem para o ORION..."
     )
 
 with col2:
@@ -893,7 +815,7 @@ prompt = prompt_texto
 if audio_input is not None:
 
     with st.spinner(
-        "🎧 JARVIS está ouvindo..."
+        "🎧 ORION está ouvindo..."
     ):
 
         texto_transcrito = transcrever_audio(
@@ -1018,7 +940,7 @@ if prompt:
 
             "content": (
 
-                PERSONAS[st.session_state.persona]["prompt"] + " "
+                PERSONAS["🔷 ORION"]["prompt"] + " "
 
                 "Você é um assistente virtual avançado, "
                 "inteligente, prestativo, educado e natural. "
@@ -1179,7 +1101,7 @@ if prompt:
             # BOTÕES DE VOZ
             # =================================================
 
-            falar_texto(response, st.session_state.persona)
+            falar_texto(response, "🔷 ORION")
 
 
             # =================================================
