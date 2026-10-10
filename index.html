@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ORION Voice Listener</title>
+  <script src="https://unpkg.com/streamlit-component-lib@1.4.0/dist/index.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; padding: 8px 0; font-family: system-ui, sans-serif; background: transparent; }
+    .wrap { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+    button { border:0; border-radius:10px; padding:10px 14px; font-size:14px; font-weight:600; cursor:pointer; }
+    #toggle { background:#147dce; color:white; }
+    #status { font-size:13px; opacity:.85; }
+    #last { font-size:12px; opacity:.7; width:100%; overflow-wrap:anywhere; }
+    .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#888; margin-right:6px; }
+    .on .dot { background:#16a34a; }
+    .error { color:#dc2626; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="wrap">
+    <button id="toggle" type="button">🎙️ Ativar microfone</button>
+    <span id="status"><span class="dot"></span>Microfone desligado</span>
+    <div id="last">Diga “ORION” seguido do seu comando depois de ativar.</div>
+  </div>
+<script>
+(function () {
+  const Streamlit = window.Streamlit;
+  const button = document.getElementById("toggle");
+  const status = document.getElementById("status");
+  const wrap = document.getElementById("wrap");
+  const last = document.getElementById("last");
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  let enabled = false;
+  let recognition = null;
+  let shouldRestart = false;
+  let nonce = 0;
+  let lastSent = "";
+  let restartTimer = null;
+
+  function setHeight() {
+    if (Streamlit && Streamlit.setFrameHeight) Streamlit.setFrameHeight(75);
+  }
+  function report(text) {
+    nonce += 1;
+    if (Streamlit && Streamlit.setComponentValue) {
+      Streamlit.setComponentValue({text: text, nonce: nonce, enabled: enabled});
+    }
+  }
+  function setUi() {
+    button.textContent = enabled ? "🔇 Mutar microfone" : "🎙️ Ativar microfone";
+    status.innerHTML = '<span class="dot"></span>' + (enabled ? "Escutando… diga “ORION”" : "Microfone desligado");
+    wrap.classList.toggle("on", enabled);
+    setHeight();
+    if (Streamlit && Streamlit.setComponentValue) {
+      Streamlit.setComponentValue({text:"", nonce:nonce, enabled:enabled});
+    }
+  }
+  function stopRecognition() {
+    shouldRestart = false;
+    if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+    if (recognition) {
+      try { recognition.onend = null; recognition.stop(); } catch(e) {}
+      recognition = null;
+    }
+  }
+  function startRecognition() {
+    if (!enabled) return;
+    if (!SpeechRecognition) {
+      status.innerHTML = '<span class="error">Este navegador não oferece reconhecimento de voz. Tente Chrome ou Edge.</span>';
+      enabled = false; setUi(); return;
+    }
+    stopRecognition();
+    shouldRestart = true;
+    recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = function(event) {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (!event.results[i].isFinal) continue;
+        const original = (event.results[i][0].transcript || "").trim();
+        if (!original) continue;
+        const normalized = original.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const match = normalized.match(/\borion\b[\s,.:;!?-]*(.*)$/i);
+        if (!match) {
+          last.textContent = "Ouvido: “" + original + "” — diga “ORION” antes do comando.";
+          continue;
+        }
+        const command = (match[1] || "").trim().replace(/^[,.:;!?-]+/, "");
+        if (!command) {
+          last.textContent = "Chamado reconhecido. Diga seu comando começando com “ORION”.";
+          continue;
+        }
+        if (command.toLowerCase() === lastSent.toLowerCase()) continue;
+        lastSent = command;
+        last.textContent = "Comando reconhecido: “" + command + "”";
+        report(command);
+      }
+    };
+    recognition.onerror = function(event) {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        enabled = false; shouldRestart = false;
+        status.innerHTML = '<span class="error">Permissão do microfone negada. Autorize o microfone no navegador.</span>';
+        setUi();
+      } else if (event.error !== "no-speech" && event.error !== "aborted") {
+        status.innerHTML = '<span class="error">Falha no reconhecimento: ' + event.error + '</span>';
+      }
+    };
+    recognition.onend = function() {
+      recognition = null;
+      if (enabled && shouldRestart) {
+        restartTimer = setTimeout(startRecognition, 500);
+      }
+    };
+    try {
+      recognition.start();
+      status.innerHTML = '<span class="dot"></span>Escutando… diga “ORION”';
+    } catch(e) {
+      if (enabled) restartTimer = setTimeout(startRecognition, 800);
+    }
+  }
+
+  button.addEventListener("click", function() {
+    enabled = !enabled;
+    if (enabled) {
+      setUi();
+      startRecognition();
+    } else {
+      stopRecognition();
+      setUi();
+      last.textContent = "Microfone mutado. Clique em “Ativar microfone” para voltar a ouvir.";
+    }
+  });
+
+  if (Streamlit) {
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(75);
+    Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function(event) {
+      // O estado do botão fica no navegador durante os reruns do Streamlit.
+      setHeight();
+    });
+    Streamlit.setComponentValue({text:"", nonce:0, enabled:false});
+  } else {
+    status.innerHTML = '<span class="error">Não foi possível carregar a biblioteca do componente Streamlit.</span>';
+  }
+})();
+</script>
+</body>
+</html>
