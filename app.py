@@ -8,7 +8,6 @@ from edge_tts import Communicate
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from pathlib import Path
 
 
 # ============================================================
@@ -23,11 +22,9 @@ st.set_page_config(
 
 
 # Componente do navegador para ativação por voz (palavra de chamada: ORION).
-VOICE_COMPONENT_DIR = Path(__file__).resolve().parent / "orion_voice_component"
-
 voice_listener_component = components.declare_component(
     "orion_voice_listener",
-    path=str(VOICE_COMPONENT_DIR)
+    path="orion_voice_component"
 )
 
 
