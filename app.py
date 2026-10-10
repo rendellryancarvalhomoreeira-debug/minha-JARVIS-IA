@@ -74,7 +74,7 @@ def limpar_texto_para_voz(texto):
     return texto
 
 
-def falar_texto(texto, persona="🔷 ORION"):
+def falar_texto(texto, persona="🔭 ORION"):
     """Gera áudio Kokoro e prepara o sinal para evitar clipping e distorção."""
 
     texto = limpar_texto_para_voz(texto)
@@ -94,11 +94,11 @@ def falar_texto(texto, persona="🔷 ORION"):
             st.error("Não foi possível carregar o Kokoro. Verifique as dependências.")
             return
 
-        configuracao_persona = PERSONAS.get(persona, PERSONAS["🔷 ORION"])
+        configuracao_persona = PERSONAS.get(persona, PERSONAS["🔭 ORION"])
         voz = configuracao_persona["voice"]
 
         partes_audio = []
-        for _, _, audio in pipeline(texto, voice=voz):
+        for _, _, audio in pipeline(texto, voice=voz, speed=0.94):
             # Converte de forma consistente para um vetor NumPy mono em float32.
             if hasattr(audio, "detach"):
                 audio = audio.detach().cpu().numpy()
@@ -131,7 +131,7 @@ def falar_texto(texto, persona="🔷 ORION"):
         audio_bytes = buffer.getvalue()
 
         st.caption(
-            f"🔊 Voz: {voz} • Persona: {configuracao_persona['description']}"
+            f"🔊 Voz: {voz} • Perfil: {configuracao_persona['description']}"
         )
         st.audio(audio_bytes, format="audio/wav")
 
@@ -157,22 +157,21 @@ MODEL_NAME = "openai/gpt-oss-20b"
 
 
 # ============================================================
-# 4.1. PERSONAS - VOZ + PERSONALIDADE
+# 4.1. IDENTIDADE E VOZ DO ORION
 # ============================================================
 
 PERSONAS = {
-    "🔷 ORION": {
-        "description": "Voz original, serena, natural e tecnológica",
-        # Mistura experimental de dois timbres masculinos do Kokoro.
-        # Isso cria uma combinação própria, não uma clonagem de ator.
-        "voice": "pm_alex,pm_santa",
+    "🔭 ORION": {
+        "description": "Natural, calmo, inteligente e profissional",
+        "voice": "pm_alex",
         "prompt": (
-            "Você é ORION: Orquestrador de Raciocínio, Integração, Organização e Navegação. "
-            "Você é um assistente de inteligência artificial original, confiável e prestativo. "
-            "Fale em português brasileiro com clareza, naturalidade, calma e confiança. "
-            "Use frases bem pontuadas e um ritmo sereno, com uma personalidade moderna, "
-            "elegante e tecnológica, sem soar teatral, excessivamente formal ou robótica. "
-            "Seja objetivo quando possível e explique com cuidado quando necessário."
+            "Você é ORION, que significa Orquestrador de Raciocínio, Integração, "
+            "Organização e Navegação. Seja um assistente inteligente, confiável e "
+            "natural. Fale como uma pessoa articulada em uma conversa real: varie "
+            "o tamanho das frases, evite formalidade excessiva, frases feitas e "
+            "repetições. Use português brasileiro claro, contrações naturais quando "
+            "apropriado e pontuação que favoreça uma fala fluida. Não narre ações "
+            "que não realizou e não diga que é humano. Seja calmo, direto e prestativo."
         )
     }
 }
@@ -328,7 +327,7 @@ if (
 
 if "user" not in st.session_state:
 
-    st.title("🔷 ORION AI")
+    st.title("🤖 ORION AI")
 
     st.subheader("🔐 Acesso ao ORION")
 
@@ -480,10 +479,50 @@ user_email = usuario.email
 
 
 # ============================================================
-# 9.1. IDENTIDADE FIXA DO ORION
+# 9.1. CONFIGURAÇÃO DO ORION
 # ============================================================
 
-st.session_state.persona = "🔷 ORION"
+def carregar_persona():
+
+    try:
+        resultado = (
+            supabase
+            .table("user_settings")
+            .select("persona")
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+
+        if resultado.data and resultado.data.get("persona") in PERSONAS:
+            return resultado.data["persona"]
+
+    except Exception:
+        # Se a tabela ainda não existir, o ORION continua funcionando
+        # usando a configuração desta sessão.
+        pass
+
+    return "🔭 ORION"
+
+
+def salvar_persona(persona):
+
+    try:
+        supabase.table("user_settings").upsert({
+            "user_id": user_id,
+            "persona": persona,
+            "updated_at": datetime.now(ZoneInfo("America/Sao_Paulo")).isoformat()
+        }).execute()
+        return True
+    except Exception:
+        # A persona continua funcionando mesmo sem a tabela opcional.
+        return False
+
+
+if "persona" not in st.session_state:
+    st.session_state.persona = carregar_persona()
+if st.session_state.persona not in PERSONAS:
+    st.session_state.persona = "🔭 ORION"
 
 
 # ============================================================
@@ -608,7 +647,7 @@ if "active_chat_id" not in st.session_state:
 
 with st.sidebar:
 
-    st.title("🔷 ORION AI")
+    st.title("🤖 ORION AI")
 
     st.caption(
         f"Modelo: {MODEL_NAME}"
@@ -617,14 +656,15 @@ with st.sidebar:
     st.markdown("---")
 
 
-    st.subheader("🔷 ORION")
-    st.caption(PERSONAS["🔷 ORION"]["description"])
+    st.subheader("🔭 Identidade do ORION")
+    st.caption("Voz: português brasileiro • perfil natural e profissional")
 
     if st.button("🔊 Testar voz do ORION", use_container_width=True):
-        falar_texto(
-            "Olá. Eu sou ORION: Orquestrador de Raciocínio, Integração, Organização e Navegação. Estou pronto para ajudar.",
-            "🔷 ORION"
+        texto_teste = (
+            "Olá. Eu sou o ORION. Estou pronto para ajudar. "
+            "O que você gostaria de fazer hoje?"
         )
+        falar_texto(texto_teste, st.session_state.persona)
 
     st.markdown("---")
 
@@ -764,7 +804,7 @@ messages = (
 # ============================================================
 
 st.title(
-    f"🔷 ORION AI - {current_chat_id}"
+    f"🤖 ORION AI - {current_chat_id}"
 )
 
 
@@ -940,7 +980,7 @@ if prompt:
 
             "content": (
 
-                PERSONAS["🔷 ORION"]["prompt"] + " "
+                PERSONAS[st.session_state.persona]["prompt"] + " "
 
                 "Você é um assistente virtual avançado, "
                 "inteligente, prestativo, educado e natural. "
@@ -1101,7 +1141,7 @@ if prompt:
             # BOTÕES DE VOZ
             # =================================================
 
-            falar_texto(response, "🔷 ORION")
+            falar_texto(response, st.session_state.persona)
 
 
             # =================================================
