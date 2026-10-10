@@ -21,6 +21,13 @@ st.set_page_config(
 )
 
 
+# Componente do navegador para ativação por voz (palavra de chamada: ORION).
+voice_listener_component = components.declare_component(
+    "orion_voice_listener",
+    path="orion_voice_component"
+)
+
+
 # ============================================================
 # 2. CONEXÃO COM A GROQ
 # ============================================================
@@ -81,7 +88,7 @@ def falar_texto(texto, persona="🔭 ORION"):
         st.caption(
             f"🔊 Voz: {EDGE_VOICE} • Edge TTS • Português brasileiro"
         )
-        st.audio(audio_bytes, format="audio/mp3")
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
     except Exception as e:
         st.error(
@@ -780,6 +787,24 @@ for message in messages:
 # 17. ENTRADA DO USUÁRIO
 # ============================================================
 
+# ============================================================
+# 16.1. ATIVAÇÃO POR VOZ NO NAVEGADOR
+# ============================================================
+
+voice_payload = voice_listener_component(key="orion_voice_listener")
+voice_prompt = None
+
+if isinstance(voice_payload, dict):
+    voice_nonce = voice_payload.get("nonce")
+    voice_text = str(voice_payload.get("text", "")).strip()
+    if (
+        voice_text
+        and voice_nonce
+        and voice_nonce != st.session_state.get("last_orion_voice_nonce")
+    ):
+        st.session_state.last_orion_voice_nonce = voice_nonce
+        voice_prompt = voice_text
+
 col1, col2 = st.columns([4, 1])
 
 with col1:
@@ -802,8 +827,12 @@ with col2:
 
 prompt = prompt_texto
 
+if voice_prompt:
+    prompt = voice_prompt
+    st.info(f"🎙️ Chamado do ORION reconhecido: **{voice_prompt}**")
 
-if audio_input is not None:
+
+if audio_input is not None and not voice_prompt and not prompt_texto:
 
     with st.spinner(
         "🎧 ORION está ouvindo..."
