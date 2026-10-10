@@ -74,15 +74,9 @@ def limpar_texto_para_voz(texto):
     return texto
 
 
-def separar_frases_para_voz(texto):
-    """Divide o texto em frases para inserir pausas naturais no áudio."""
-    frases = re.split(r"(?<=[.!?])\s+", texto.strip())
-    return [frase.strip() for frase in frases if frase.strip()]
-
-
 def falar_texto(texto, persona="🤖 JARVIS"):
 
-    """Converte a resposta em áudio com pausas entre frases usando Kokoro."""
+    """Gera a fala em uma única síntese para manter timbre e fluidez."""
 
     texto = limpar_texto_para_voz(texto)
     if not texto:
@@ -102,22 +96,14 @@ def falar_texto(texto, persona="🤖 JARVIS"):
             PERSONAS["🤖 JARVIS"]
         )["voice"]
 
+        # Sintetiza a resposta inteira de uma vez. Isso evita mudanças de
+        # timbre e cortes perceptíveis que podem surgir ao gerar cada frase
+        # separadamente. A pontuação original guia as pausas naturais.
         partes_audio = []
-        frases = separar_frases_para_voz(texto)
-        pausa_curta = np.zeros(int(24000 * 0.20), dtype=np.float32)
+        generator = pipeline(texto, voice=voz)
 
-        # Sintetiza cada frase separadamente para que as pausas sejam audíveis.
-        for indice, frase in enumerate(frases):
-            generator = pipeline(frase, voice=voz)
-            audio_frase = []
-
-            for _, _, audio in generator:
-                audio_frase.append(np.asarray(audio, dtype=np.float32))
-
-            if audio_frase:
-                partes_audio.append(np.concatenate(audio_frase))
-                if indice < len(frases) - 1:
-                    partes_audio.append(pausa_curta)
+        for _, _, audio in generator:
+            partes_audio.append(np.asarray(audio, dtype=np.float32))
 
         if not partes_audio:
             st.warning("O Kokoro não gerou áudio para esta resposta.")
@@ -132,23 +118,16 @@ def falar_texto(texto, persona="🤖 JARVIS"):
             24000,
             format="WAV"
         )
-
         audio_bytes = buffer.getvalue()
 
         st.caption(
             f"🔊 Voz: {voz} • Persona: "
             f"{PERSONAS.get(persona, PERSONAS['🤖 JARVIS'])['description']}"
         )
-
-        st.audio(
-            audio_bytes,
-            format="audio/wav"
-        )
+        st.audio(audio_bytes, format="audio/wav")
 
     except Exception as e:
-        st.error(
-            f"Erro ao gerar a voz com o Kokoro: {e}"
-        )
+        st.error(f"Erro ao gerar a voz com o Kokoro: {e}")
 
 
 # ============================================================
