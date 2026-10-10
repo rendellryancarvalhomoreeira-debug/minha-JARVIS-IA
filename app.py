@@ -3,14 +3,8 @@ import streamlit.components.v1 as components
 import json
 import re
 from groq import Groq
-import io
-import numpy as np
-import soundfile as sf
-
-try:
-    from kokoro import KPipeline
-except Exception:
-    KPipeline = None
+import asyncio
+from edge_tts import Communicate
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -37,16 +31,25 @@ client = Groq(
 
 
 # ============================================================
-# 2.0. KOKORO TTS - VOZ LOCAL E GRATUITA
+# 2.0. EDGE TTS - VOZ NEURAL ONLINE
 # ============================================================
 
-@st.cache_resource(show_spinner=False)
-def carregar_pipeline_kokoro():
+EDGE_VOICE = "pt-BR-AntonioNeural"
 
-    if KPipeline is None:
-        return None
 
-    return KPipeline(lang_code="p")
+async def gerar_audio_edge(texto):
+    """Gera áudio MP3 com uma voz neural em português brasileiro."""
+    comunicador = Communicate(
+        texto,
+        voice=EDGE_VOICE,
+        rate="-5%",
+        pitch="-2Hz"
+    )
+    audio = bytearray()
+    async for parte in comunicador.stream():
+        if parte.get("type") == "audio":
+            audio.extend(parte.get("data", b""))
+    return bytes(audio)
 
 
 def limpar_texto_para_voz(texto):
@@ -55,88 +58,36 @@ def limpar_texto_para_voz(texto):
         return ""
 
     texto = str(texto)
-
-    # Mantém o texto de links Markdown, removendo a URL.
+    texto = re.sub(r"```[\s\S]*?```", " trecho de código omitido. ", texto)
     texto = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", texto)
-
-    # Remove blocos de código e marcações comuns de Markdown.
-    texto = re.sub(r"```[\s\S]*?```", " ", texto)
     texto = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", texto)
     texto = re.sub(r"[*_~`#]", "", texto)
-
-    # Em números isolados de dois dígitos, remove o zero à esquerda:
-    # "09" vira "9" para o Kokoro dizer "nove", não "zero nove".
-    # Não altera números maiores nem valores ligados a datas/horários/códigos.
-    texto = re.sub(r"(?<![\d/:-])0([1-9])(?![\d/:-])", r"\1", texto)
-
-    # Normaliza espaços para uma fala mais natural.
     texto = re.sub(r"\s+", " ", texto).strip()
     return texto
 
 
 def falar_texto(texto, persona="🔭 ORION"):
-    """Gera áudio Kokoro e prepara o sinal para evitar clipping e distorção."""
-
+    """Gera e reproduz áudio usando Edge TTS."""
     texto = limpar_texto_para_voz(texto)
     if not texto:
         return
 
-    if KPipeline is None:
-        st.error(
-            "Kokoro não está instalado. Adicione 'kokoro' e 'soundfile' "
-            "ao requirements.txt e 'espeak-ng' ao packages.txt."
-        )
-        return
-
     try:
-        pipeline = carregar_pipeline_kokoro()
-        if pipeline is None:
-            st.error("Não foi possível carregar o Kokoro. Verifique as dependências.")
+        audio_bytes = asyncio.run(gerar_audio_edge(texto))
+        if not audio_bytes:
+            st.warning("O Edge TTS não gerou áudio para esta resposta.")
             return
-
-        configuracao_persona = PERSONAS.get(persona, PERSONAS["🔭 ORION"])
-        voz = configuracao_persona["voice"]
-
-        partes_audio = []
-        for _, _, audio in pipeline(texto, voice=voz, speed=0.94):
-            # Converte de forma consistente para um vetor NumPy mono em float32.
-            if hasattr(audio, "detach"):
-                audio = audio.detach().cpu().numpy()
-            trecho = np.asarray(audio, dtype=np.float32).reshape(-1)
-            if trecho.size:
-                partes_audio.append(trecho)
-
-        if not partes_audio:
-            st.warning("O Kokoro não gerou áudio para esta resposta.")
-            return
-
-        audio_completo = np.concatenate(partes_audio).astype(np.float32, copy=False)
-
-        # Evita que valores inválidos causem estalos ou áudio distorcido.
-        audio_completo = np.nan_to_num(
-            audio_completo, nan=0.0, posinf=0.0, neginf=0.0
-        )
-
-        # Remove um possível deslocamento contínuo do sinal (DC offset).
-        audio_completo = audio_completo - np.mean(audio_completo)
-
-        # Normalização suave: deixa margem contra clipping na reprodução.
-        pico = float(np.max(np.abs(audio_completo))) if audio_completo.size else 0.0
-        if pico > 0.0:
-            audio_completo = audio_completo * (0.90 / pico)
-
-        # O Kokoro gera áudio a 24 kHz; manter 24000 evita alterar a velocidade/timbre.
-        buffer = io.BytesIO()
-        sf.write(buffer, audio_completo, 24000, format="WAV", subtype="PCM_16")
-        audio_bytes = buffer.getvalue()
 
         st.caption(
-            f"🔊 Voz: {voz} • Perfil: {configuracao_persona['description']}"
+            f"🔊 Voz: {EDGE_VOICE} • Edge TTS • Português brasileiro"
         )
-        st.audio(audio_bytes, format="audio/wav")
+        st.audio(audio_bytes, format="audio/mp3")
 
     except Exception as e:
-        st.error(f"Erro ao gerar a voz com o Kokoro: {e}")
+        st.error(
+            "Não consegui gerar a voz com o Edge TTS. Verifique a conexão com "
+            f"a internet e tente novamente. Detalhe: {e}"
+        )
 
 
 # ============================================================
