@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import json
 import re
 from groq import Groq
@@ -8,7 +7,6 @@ from edge_tts import Communicate
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from pathlib import Path
 
 
 # ============================================================
@@ -22,13 +20,6 @@ st.set_page_config(
 )
 
 
-# Componente do navegador para ativação por voz (palavra de chamada: ORION).
-VOICE_COMPONENT_DIR = Path(__file__).resolve().parent / "orion_voice_component"
-
-voice_listener_component = components.declare_component(
-    "orion_voice_listener",
-    path=str(VOICE_COMPONENT_DIR)
-)
 
 
 # ============================================================
@@ -791,44 +782,49 @@ for message in messages:
 # ============================================================
 
 # ============================================================
-# 16.1. ATIVAÇÃO POR VOZ NO NAVEGADOR
+# 16.1. ENTRADA DE VOZ SEM COMPONENTE PERSONALIZADO
 # ============================================================
 
-voice_payload = voice_listener_component(
-    key="orion_voice_listener",
-    default={"text": "", "nonce": 0, "enabled": False},
+st.caption(
+    "🎙️ Para falar com o ORION, grave uma mensagem abaixo. "
+    "A gravação será transcrita pela API de áudio da Groq."
 )
-voice_prompt = None
 
-if isinstance(voice_payload, dict):
-    voice_nonce = voice_payload.get("nonce")
-    voice_text = str(voice_payload.get("text", "")).strip()
-    if (
-        voice_text
-        and voice_nonce
-        and voice_nonce != st.session_state.get("last_orion_voice_nonce")
-    ):
-        st.session_state.last_orion_voice_nonce = voice_nonce
-        voice_prompt = voice_text
+audio_voz = st.audio_input(
+    "Gravar mensagem de voz",
+    key="orion_audio_input",
+)
 
 prompt_texto = st.chat_input(
     "Digite sua mensagem para o ORION..."
 )
 
+voice_prompt = None
 
-# ============================================================
-# TRANSFORMAR VOZ EM TEXTO
-# ============================================================
+if audio_voz is not None:
+    audio_bytes = audio_voz.getvalue()
+    audio_hash = __import__("hashlib").sha256(audio_bytes).hexdigest()
 
-prompt = prompt_texto
+    # Evita processar a mesma gravação novamente em cada rerun do Streamlit.
+    if audio_hash != st.session_state.get("last_orion_audio_hash"):
+        st.session_state.last_orion_audio_hash = audio_hash
+        try:
+            transcricao = client.audio.transcriptions.create(
+                file=("orion_audio.wav", audio_bytes),
+                model="whisper-large-v3-turbo",
+                language="pt",
+                response_format="text",
+            )
+            voice_prompt = str(transcricao).strip()
+            if voice_prompt:
+                st.success(f"🎙️ Voz reconhecida: {voice_prompt}")
+            else:
+                st.warning("Não consegui reconhecer palavras nessa gravação.")
+        except Exception as e:
+            st.error(f"Não consegui transcrever o áudio: {e}")
 
-if voice_prompt:
-    prompt = voice_prompt
-    st.info(f"🎙️ Chamado do ORION reconhecido: **{voice_prompt}**")
-
-
-# O reconhecimento de voz agora é feito no navegador pelo componente
-# orion_voice_component. Não é necessário enviar uma gravação manual.
+# A mensagem digitada tem prioridade; caso contrário, usa a transcrição.
+prompt = prompt_texto or voice_prompt
 
 
 # ============================================================
