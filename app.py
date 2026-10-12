@@ -70,28 +70,61 @@ def falar_texto(texto, persona="🔭 ORION"):
       const botao = document.getElementById('orion-speak');
       const status = document.getElementById('orion-status');
 
+      function escolherVoz() {{
+        const vozes = window.speechSynthesis.getVoices();
+        const ptBR = vozes.filter(v =>
+          v.lang && v.lang.toLowerCase().replace('_', '-') === 'pt-br'
+        );
+        const portugues = vozes.filter(v =>
+          v.lang && v.lang.toLowerCase().startsWith('pt')
+        );
+
+        // Os nomes variam conforme o navegador e o sistema operacional.
+        const padraoMasculino = /antonio|ant[oô]nio|daniel|ricardo|rafael|paulo|carlos|jorge|male|masculino|alex/i;
+        return ptBR.find(v => padraoMasculino.test(v.name))
+          || portugues.find(v => padraoMasculino.test(v.name))
+          || ptBR[0]
+          || portugues[0]
+          || null;
+      }}
+
       function falar() {{
         if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {{
           status.textContent = 'Este navegador não oferece síntese de voz.';
           return;
         }}
+
+        const vozes = window.speechSynthesis.getVoices();
+        if (!vozes.length) {{
+          status.textContent = 'Carregando vozes do navegador…';
+          window.speechSynthesis.onvoiceschanged = () => falar();
+          return;
+        }}
+
         window.speechSynthesis.cancel();
         const fala = new SpeechSynthesisUtterance(texto);
         fala.lang = 'pt-BR';
         fala.rate = 0.95;
-        fala.pitch = 0.9;
-        const vozes = window.speechSynthesis.getVoices();
-        const vozPt = vozes.find(v => v.lang && v.lang.toLowerCase().startsWith('pt-br'))
-                   || vozes.find(v => v.lang && v.lang.toLowerCase().startsWith('pt'));
-        if (vozPt) fala.voice = vozPt;
-        fala.onstart = () => status.textContent = 'Falando…';
+        fala.pitch = 0.85;
+
+        const voz = escolherVoz();
+        if (voz) fala.voice = voz;
+
+        const nomePareceMasculino = voz && /antonio|ant[oô]nio|daniel|ricardo|rafael|paulo|carlos|jorge|male|masculino|alex/i.test(voz.name);
+        fala.onstart = () => {{
+          status.textContent = nomePareceMasculino
+            ? ('Falando com voz: ' + voz.name)
+            : (voz ? ('Voz disponível: ' + voz.name + ' (não foi possível confirmar que seja masculina)') : 'Usando voz padrão do navegador');
+        }};
         fala.onend = () => status.textContent = 'Concluído';
         fala.onerror = () => status.textContent = 'Não foi possível reproduzir. Clique para tentar novamente.';
         window.speechSynthesis.speak(fala);
-        status.textContent = vozPt ? ('Voz: ' + vozPt.name) : 'Usando voz padrão do navegador';
       }}
 
       botao.addEventListener('click', falar);
+      window.speechSynthesis.onvoiceschanged = () => {{
+        // A lista de vozes pode chegar depois que o componente é carregado.
+      }};
       // Tentativa automática; se o navegador bloquear, o botão continua disponível.
       window.setTimeout(falar, 300);
     </script>
