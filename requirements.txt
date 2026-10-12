@@ -1,4 +1,5 @@
+anthropic
+SpeechRecognition
+pyaudio
+pyttsx3
 streamlit
-groq
-supabase
-edge-tts
