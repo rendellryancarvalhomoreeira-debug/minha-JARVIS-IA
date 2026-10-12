@@ -2,8 +2,7 @@ import streamlit as st
 import json
 import re
 from groq import Groq
-import asyncio
-from edge_tts import Communicate
+import streamlit.components.v1 as components
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -32,25 +31,8 @@ client = Groq(
 
 
 # ============================================================
-# 2.0. EDGE TTS - VOZ NEURAL ONLINE
+# 2.0. VOZ DO NAVEGADOR (SPEECH SYNTHESIS)
 # ============================================================
-
-EDGE_VOICE = "pt-BR-AntonioNeural"
-
-
-async def gerar_audio_edge(texto):
-    """Gera áudio MP3 com uma voz neural em português brasileiro."""
-    comunicador = Communicate(
-        texto,
-        voice=EDGE_VOICE,
-        rate="-5%",
-        pitch="-2Hz"
-    )
-    audio = bytearray()
-    async for parte in comunicador.stream():
-        if parte.get("type") == "audio":
-            audio.extend(parte.get("data", b""))
-    return bytes(audio)
 
 
 def limpar_texto_para_voz(texto):
@@ -68,27 +50,53 @@ def limpar_texto_para_voz(texto):
 
 
 def falar_texto(texto, persona="🔭 ORION"):
-    """Gera e reproduz áudio usando Edge TTS."""
-    texto = limpar_texto_para_voz(texto)
-    if not texto:
+    """Solicita ao navegador que leia o texto usando uma voz instalada."""
+    texto_limpo = limpar_texto_para_voz(texto)
+    if not texto_limpo:
         return
 
-    try:
-        audio_bytes = asyncio.run(gerar_audio_edge(texto))
-        if not audio_bytes:
-            st.warning("O Edge TTS não gerou áudio para esta resposta.")
-            return
+    # O texto é codificado como JSON para não quebrar o JavaScript.
+    texto_json = json.dumps(texto_limpo, ensure_ascii=False)
+    html = f'''    <div style="font-family: sans-serif; color: var(--text-color, #ddd);">
+      <button id="orion-speak" style="padding:8px 14px;border:0;border-radius:8px;cursor:pointer;">
+        🔊 Ouvir resposta do ORION
+      </button>
+      <span id="orion-status" style="margin-left:8px;font-size:12px;">
+        Voz do navegador
+      </span>
+    </div>
+    <script>
+      const texto = {texto_json};
+      const botao = document.getElementById('orion-speak');
+      const status = document.getElementById('orion-status');
 
-        st.caption(
-            f"🔊 Voz: {EDGE_VOICE} • Edge TTS • Português brasileiro"
-        )
-        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+      function falar() {{
+        if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {{
+          status.textContent = 'Este navegador não oferece síntese de voz.';
+          return;
+        }}
+        window.speechSynthesis.cancel();
+        const fala = new SpeechSynthesisUtterance(texto);
+        fala.lang = 'pt-BR';
+        fala.rate = 0.95;
+        fala.pitch = 0.9;
+        const vozes = window.speechSynthesis.getVoices();
+        const vozPt = vozes.find(v => v.lang && v.lang.toLowerCase().startsWith('pt-br'))
+                   || vozes.find(v => v.lang && v.lang.toLowerCase().startsWith('pt'));
+        if (vozPt) fala.voice = vozPt;
+        fala.onstart = () => status.textContent = 'Falando…';
+        fala.onend = () => status.textContent = 'Concluído';
+        fala.onerror = () => status.textContent = 'Não foi possível reproduzir. Clique para tentar novamente.';
+        window.speechSynthesis.speak(fala);
+        status.textContent = vozPt ? ('Voz: ' + vozPt.name) : 'Usando voz padrão do navegador';
+      }}
 
-    except Exception as e:
-        st.error(
-            "Não consegui gerar a voz com o Edge TTS. Verifique a conexão com "
-            f"a internet e tente novamente. Detalhe: {e}"
-        )
+      botao.addEventListener('click', falar);
+      // Tentativa automática; se o navegador bloquear, o botão continua disponível.
+      window.setTimeout(falar, 300);
+    </script>
+    '''
+    components.html(html, height=55)
 
 
 # ============================================================
