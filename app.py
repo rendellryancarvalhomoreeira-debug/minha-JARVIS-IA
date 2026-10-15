@@ -1,8 +1,9 @@
 import streamlit as st
-import json
 import re
+import os
+import tempfile
 from groq import Groq
-import streamlit.components.v1 as components
+from cartesia import Cartesia
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -31,7 +32,7 @@ client = Groq(
 
 
 # ============================================================
-# 2.0. VOZ DO NAVEGADOR (SPEECH SYNTHESIS)
+# 2.0. VOZ DO ORION COM CARTESIA
 # ============================================================
 
 
@@ -50,86 +51,61 @@ def limpar_texto_para_voz(texto):
 
 
 def falar_texto(texto, persona="🔭 ORION"):
-    """Solicita ao navegador que leia o texto usando uma voz instalada."""
+    """Gera voz com a Cartesia e exibe o áudio no Streamlit."""
     texto_limpo = limpar_texto_para_voz(texto)
     if not texto_limpo:
         return
 
-    # O texto é codificado como JSON para não quebrar o JavaScript.
-    texto_json = json.dumps(texto_limpo, ensure_ascii=False)
-    html = f'''    <div style="font-family: sans-serif; color: var(--text-color, #ddd);">
-      <button id="orion-speak" style="padding:8px 14px;border:0;border-radius:8px;cursor:pointer;">
-        🔊 Ouvir resposta do ORION
-      </button>
-      <span id="orion-status" style="margin-left:8px;font-size:12px;">
-        Voz do navegador
-      </span>
-    </div>
-    <script>
-      const texto = {texto_json};
-      const botao = document.getElementById('orion-speak');
-      const status = document.getElementById('orion-status');
+    api_key = st.secrets.get("CARTESIA_API_KEY", "")
+    voice_id = st.secrets.get("CARTESIA_VOICE_ID", "")
 
-      function escolherVoz() {{
-        const vozes = window.speechSynthesis.getVoices();
-        const ptBR = vozes.filter(v =>
-          v.lang && v.lang.toLowerCase().replace('_', '-') === 'pt-br'
-        );
-        const portugues = vozes.filter(v =>
-          v.lang && v.lang.toLowerCase().startsWith('pt')
-        );
+    if not api_key:
+        st.warning("Configure CARTESIA_API_KEY nos Secrets do Streamlit para ativar a voz do ORION.")
+        return
 
-        // Os nomes variam conforme o navegador e o sistema operacional.
-        const padraoMasculino = /antonio|ant[oô]nio|daniel|ricardo|rafael|paulo|carlos|jorge|male|masculino|alex/i;
-        return ptBR.find(v => padraoMasculino.test(v.name))
-          || portugues.find(v => padraoMasculino.test(v.name))
-          || ptBR[0]
-          || portugues[0]
-          || null;
-      }}
+    if not voice_id:
+        st.info(
+            "A chave da Cartesia está configurada. Falta escolher a voz no Playground e "
+            "adicionar CARTESIA_VOICE_ID aos Secrets do Streamlit."
+        )
+        return
 
-      function falar() {{
-        if (!('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {{
-          status.textContent = 'Este navegador não oferece síntese de voz.';
-          return;
-        }}
+    caminho_audio = None
+    try:
+        with Cartesia(api_key=api_key) as cartesia_client:
+            audio = cartesia_client.tts.generate(
+                model_id="sonic-3.6",
+                transcript=texto_limpo,
+                voice=voice_id,
+                language="pt",
+                output_format={
+                    "container": "wav",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 44100,
+                },
+            )
 
-        const vozes = window.speechSynthesis.getVoices();
-        if (!vozes.length) {{
-          status.textContent = 'Carregando vozes do navegador…';
-          window.speechSynthesis.onvoiceschanged = () => falar();
-          return;
-        }}
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as arquivo:
+                caminho_audio = arquivo.name
 
-        window.speechSynthesis.cancel();
-        const fala = new SpeechSynthesisUtterance(texto);
-        fala.lang = 'pt-BR';
-        fala.rate = 0.95;
-        fala.pitch = 0.85;
+            audio.write_to_file(caminho_audio)
 
-        const voz = escolherVoz();
-        if (voz) fala.voice = voz;
+        with open(caminho_audio, "rb") as arquivo:
+            audio_bytes = arquivo.read()
 
-        const nomePareceMasculino = voz && /antonio|ant[oô]nio|daniel|ricardo|rafael|paulo|carlos|jorge|male|masculino|alex/i.test(voz.name);
-        fala.onstart = () => {{
-          status.textContent = nomePareceMasculino
-            ? ('Falando com voz: ' + voz.name)
-            : (voz ? ('Voz disponível: ' + voz.name + ' (não foi possível confirmar que seja masculina)') : 'Usando voz padrão do navegador');
-        }};
-        fala.onend = () => status.textContent = 'Concluído';
-        fala.onerror = () => status.textContent = 'Não foi possível reproduzir. Clique para tentar novamente.';
-        window.speechSynthesis.speak(fala);
-      }}
+        st.audio(audio_bytes, format="audio/wav", autoplay=True)
 
-      botao.addEventListener('click', falar);
-      window.speechSynthesis.onvoiceschanged = () => {{
-        // A lista de vozes pode chegar depois que o componente é carregado.
-      }};
-      // Tentativa automática; se o navegador bloquear, o botão continua disponível.
-      window.setTimeout(falar, 300);
-    </script>
-    '''
-    components.html(html, height=55)
+    except Exception as erro:
+        st.error(
+            "Não consegui gerar a voz pela Cartesia. Confira se a chave e o ID da voz "
+            f"estão corretos nos Secrets. Detalhes: {erro}"
+        )
+    finally:
+        if caminho_audio and os.path.exists(caminho_audio):
+            try:
+                os.remove(caminho_audio)
+            except OSError:
+                pass
 
 
 # ============================================================
