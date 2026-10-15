@@ -2,3 +2,4 @@ streamlit
 groq
 supabase
 edge-tts
+cartesia
