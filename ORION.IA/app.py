@@ -27,7 +27,7 @@ st.set_page_config(
 # COMPONENTE DE ESCUTA CONTÍNUA DO ORION
 # ============================================================
 
-ORION_COMPONENT_DIR = Path(__file__).parent / "orion_voice_component"
+ORION_COMPONENT_DIR = Path(__file__).parent.parent / "orion_voice_component"
 orion_voice_listener = components.declare_component(
     "orion_voice_listener",
     path=str(ORION_COMPONENT_DIR),
