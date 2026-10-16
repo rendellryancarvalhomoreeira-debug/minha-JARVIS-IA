@@ -401,8 +401,7 @@ def carregar_persona():
             return resultado.data["persona"]
 
     except Exception:
-        # Se a tabela ainda não existir, o ORION continua funcionando
-        # usando a configuração desta sessão.
+        
         pass
 
     return "🔭 ORION"
@@ -418,7 +417,7 @@ def salvar_persona(persona):
         }).execute()
         return True
     except Exception:
-        # A persona continua funcionando mesmo sem a tabela opcional.
+
         return False
 
 
@@ -711,7 +710,6 @@ if audio_voz is not None:
     audio_bytes = audio_voz.getvalue()
     audio_hash = __import__("hashlib").sha256(audio_bytes).hexdigest()
 
-    # Evita processar a mesma gravação novamente em cada rerun do Streamlit.
     if audio_hash != st.session_state.get("last_orion_audio_hash"):
         st.session_state.last_orion_audio_hash = audio_hash
         try:
@@ -729,7 +727,6 @@ if audio_voz is not None:
         except Exception as e:
             st.error(f"Não consegui transcrever o áudio: {e}")
 
-# A mensagem digitada tem prioridade; caso contrário, usa a transcrição.
 prompt = prompt_texto or voice_prompt
 
 
@@ -964,10 +961,6 @@ if prompt:
 
             falar_texto(response, st.session_state.persona)
 
-
-            # =================================================
-            # SALVAR RESPOSTA NA CONVERSA
-            # =================================================
 
             messages.append({
 
