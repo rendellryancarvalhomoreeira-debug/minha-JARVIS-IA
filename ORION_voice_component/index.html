@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,sans-serif; background:transparent; color:#e7f4ff; }
+  .panel { border:1px solid #28516d; border-radius:14px; padding:14px; background:linear-gradient(135deg,rgba(11,37,57,.96),rgba(9,18,34,.96)); }
+  .top { display:flex; align-items:center; gap:12px; }
+  .orb { width:15px; height:15px; border-radius:50%; background:#64748b; box-shadow:0 0 0 5px rgba(100,116,139,.12); flex-shrink:0; }
+  .orb.on { background:#37d9ff; box-shadow:0 0 0 5px rgba(55,217,255,.13),0 0 18px rgba(55,217,255,.65); }
+  .title { font-size:15px; font-weight:700; }
+  .status { font-size:12px; color:#a8c6d8; margin-top:3px; }
+  .buttons { display:flex; gap:8px; margin-top:13px; }
+  button { border:1px solid #327a9e; border-radius:9px; padding:9px 12px; background:#123b56; color:#f2fbff; font-weight:600; cursor:pointer; }
+  button.secondary { background:transparent; border-color:#42566a; color:#c7d5df; }
+  button:disabled { opacity:.5; cursor:default; }
+  .hint { color:#91aabb; font-size:11px; margin-top:10px; line-height:1.45; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="top"><div id="orb" class="orb"></div><div><div class="title">ORION · Ativação por voz</div><div id="status" class="status">Microfone desligado</div></div></div>
+  <div class="buttons"><button id="start">Ativar escuta</button><button id="stop" class="secondary" disabled>Pausar</button></div>
+  <div class="hint">Ative uma vez e depois diga “ORION” seguido do seu comando. O navegador precisa permanecer aberto nesta página.</div>
+</div>
+<script>
+(function () {
+  const statusEl = document.getElementById('status');
+  const orb = document.getElementById('orb');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+  let restarting = false;
+  let armedUntil = 0;
+  let lastSent = '';
+
+  function sendValue(text) {
+    const nonce = Date.now().toString() + '-' + Math.random().toString(36).slice(2, 8);
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: 'streamlit:setComponentValue',
+      value: { text: text, nonce: nonce },
+      dataType: 'json'
+    }, '*');
+  }
+  function setStatus(text, active) {
+    statusEl.textContent = text;
+    orb.classList.toggle('on', !!active);
+  }
+  function startListening() {
+    if (!SpeechRecognition) {
+      setStatus('Reconhecimento de voz não disponível neste navegador. Use Chrome ou Edge.', false);
+      startBtn.disabled = false;
+      return;
+    }
+    if (listening) return;
+    recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      listening = true; restarting = false;
+      startBtn.disabled = true; stopBtn.disabled = false;
+      setStatus('Escutando… diga “ORION” para chamar', true);
+    };
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (!event.results[i].isFinal) continue;
+        const original = (event.results[i][0].transcript || '').trim();
+        const normalized = original.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const match = normalized.match(/\borion\b[\s,.:;!?-]*(.*)$/i);
+        let command = '';
+        if (match) {
+          command = (match[1] || '').trim();
+          if (!command) {
+            armedUntil = Date.now() + 10000;
+            setStatus('Chamado recebido. Pode falar o comando agora…', true);
+            continue;
+          }
+        } else if (Date.now() < armedUntil) {
+          command = original.trim();
+          armedUntil = 0;
+        }
+        if (command) {
+          const key = command.toLowerCase();
+          if (key !== lastSent) {
+            lastSent = key;
+            setStatus('Comando recebido: ' + command, true);
+            sendValue(command);
+          }
+        }
+      }
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        listening = false; startBtn.disabled = false; stopBtn.disabled = true;
+        setStatus('Permissão de microfone negada. Libere o microfone no navegador.', false);
+      } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        setStatus('Problema no reconhecimento: ' + event.error, listening);
+      }
+    };
+    recognition.onend = () => {
+      if (listening && !restarting) {
+        restarting = true;
+        setTimeout(() => {
+          if (listening && recognition) {
+            try { recognition.start(); } catch (e) { restarting = false; }
+          }
+        }, 350);
+      } else if (!listening) {
+        setStatus('Microfone desligado', false);
+      }
+    };
+    try { recognition.start(); }
+    catch (e) { setStatus('Não foi possível iniciar. Tente novamente.', false); }
+  }
+  function stopListening() {
+    listening = false; restarting = false; armedUntil = 0;
+    if (recognition) { try { recognition.stop(); } catch (e) {} }
+    recognition = null;
+    startBtn.disabled = false; stopBtn.disabled = true;
+    setStatus('Escuta pausada', false);
+  }
+  startBtn.addEventListener('click', startListening);
+  stopBtn.addEventListener('click', stopListening);
+  window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:componentReady',apiVersion:1}, '*');
+  window.parent.postMessage({isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:160}, '*');
+})();
+</script>
+</body>
+</html>
