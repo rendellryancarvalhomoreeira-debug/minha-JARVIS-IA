@@ -7,6 +7,13 @@ from cartesia import Cartesia
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
+import streamlit.components.v1 as components
+
+
+# ============================================================
+# 1. CONFIGURAÇÃO DA PÁGINA
+# ============================================================
 
 st.set_page_config(
     page_title="ORION AI",
@@ -14,9 +21,32 @@ st.set_page_config(
     layout="wide"
 )
 
+
+
+# ============================================================
+# COMPONENTE DE ESCUTA CONTÍNUA DO ORION
+# ============================================================
+
+ORION_COMPONENT_DIR = Path(__file__).parent / "orion_voice_component"
+orion_voice_listener = components.declare_component(
+    "orion_voice_listener",
+    path=str(ORION_COMPONENT_DIR),
+)
+
+
+
+# ============================================================
+# 2. CONEXÃO COM A GROQ
+# ============================================================
+
 client = Groq(
     api_key=st.secrets["GROQ_API_KEY"]
 )
+
+
+# ============================================================
+# 2.0. VOZ DO ORION COM CARTESIA
+# ============================================================
 
 
 def limpar_texto_para_voz(texto):
@@ -90,14 +120,27 @@ def falar_texto(texto, persona="🔭 ORION"):
             except OSError:
                 pass
 
+
+# ============================================================
+# 3. CONEXÃO COM O SUPABASE
+# ============================================================
+
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
     st.secrets["SUPABASE_KEY"]
 )
 
 
+# ============================================================
+# 4. MODELO
+# ============================================================
+
 MODEL_NAME = "openai/gpt-oss-20b"
 
+
+# ============================================================
+# 4.1. IDENTIDADE E VOZ DO ORION
+# ============================================================
 
 PERSONAS = {
     "🔭 ORION": {
@@ -116,6 +159,10 @@ PERSONAS = {
 }
 
 
+# ============================================================
+# 5. DATA E HORA DO BRASIL
+# ============================================================
+
 def obter_data_hora():
 
     agora = datetime.now(
@@ -127,6 +174,10 @@ def obter_data_hora():
 
     return data, hora
 
+
+# ============================================================
+# 6. FUNÇÕES DE AUTENTICAÇÃO
+# ============================================================
 
 def limpar_login():
 
@@ -176,7 +227,10 @@ def criar_conta(email, senha):
             "password": senha
         })
 
- 
+        # ----------------------------------------------------
+        # Se o Supabase exigir confirmação de e-mail
+        # ----------------------------------------------------
+
         if resposta.session is None:
 
             return (
@@ -185,6 +239,9 @@ def criar_conta(email, senha):
                 "para confirmar a conta."
             )
 
+        # ----------------------------------------------------
+        # Se a confirmação não for necessária
+        # ----------------------------------------------------
 
         if resposta.session:
 
@@ -207,6 +264,9 @@ def criar_conta(email, senha):
     return False, "Não foi possível criar a conta."
 
 
+# ============================================================
+# 7. RECUPERAR SESSÃO
+# ============================================================
 
 if (
     "access_token" in st.session_state
@@ -243,6 +303,9 @@ if (
         limpar_login()
 
 
+# ============================================================
+# 8. TELA DE LOGIN
+# ============================================================
 
 if "user" not in st.session_state:
 
@@ -255,7 +318,11 @@ if "user" not in st.session_state:
         "Criar conta"
     ])
 
-    
+
+    # ========================================================
+    # LOGIN
+    # ========================================================
+
     with aba_login:
 
         with st.form("login_form"):
@@ -304,6 +371,9 @@ if "user" not in st.session_state:
                     )
 
 
+    # ========================================================
+    # CADASTRO
+    # ========================================================
 
     with aba_cadastro:
 
@@ -372,10 +442,16 @@ if "user" not in st.session_state:
                     )
 
 
+    # ========================================================
+    # PARAR O PROGRAMA
+    # ========================================================
 
     st.stop()
 
 
+# ============================================================
+# 9. USUÁRIO LOGADO
+# ============================================================
 
 usuario = st.session_state.user
 
@@ -384,6 +460,9 @@ user_id = str(usuario.id)
 user_email = usuario.email
 
 
+# ============================================================
+# 9.1. CONFIGURAÇÃO DO ORION
+# ============================================================
 
 def carregar_persona():
 
@@ -401,7 +480,8 @@ def carregar_persona():
             return resultado.data["persona"]
 
     except Exception:
-        
+        # Se a tabela ainda não existir, o ORION continua funcionando
+        # usando a configuração desta sessão.
         pass
 
     return "🔭 ORION"
@@ -417,7 +497,7 @@ def salvar_persona(persona):
         }).execute()
         return True
     except Exception:
-
+        # A persona continua funcionando mesmo sem a tabela opcional.
         return False
 
 
@@ -426,6 +506,10 @@ if "persona" not in st.session_state:
 if st.session_state.persona not in PERSONAS:
     st.session_state.persona = "🔭 ORION"
 
+
+# ============================================================
+# 10. MEMÓRIA PERMANENTE
+# ============================================================
 
 def salvar_memoria(categoria, conteudo):
 
@@ -506,6 +590,9 @@ para responder.
     return contexto
 
 
+# ============================================================
+# 11. CONVERSAS
+# ============================================================
 
 if "chats" not in st.session_state:
 
@@ -527,11 +614,18 @@ if "chats" not in st.session_state:
     }
 
 
+# ============================================================
+# 12. CONVERSA ATIVA
+# ============================================================
 
 if "active_chat_id" not in st.session_state:
 
     st.session_state.active_chat_id = "Conversa 1"
 
+
+# ============================================================
+# 13. BARRA LATERAL
+# ============================================================
 
 with st.sidebar:
 
@@ -556,14 +650,19 @@ with st.sidebar:
 
     st.markdown("---")
 
-
+    # ========================================================
+    # CONTA
+    # ========================================================
 
     st.subheader("👤 Conta")
 
     st.write(user_email)
 
 
- 
+    # ========================================================
+    # LOGOUT
+    # ========================================================
+
     if st.button(
         "🚪 Sair",
         use_container_width=True
@@ -587,6 +686,9 @@ with st.sidebar:
     st.markdown("---")
 
 
+    # ========================================================
+    # NOVA CONVERSA
+    # ========================================================
 
     if st.button(
         "➕ Nova conversa",
@@ -621,6 +723,9 @@ with st.sidebar:
     st.subheader("💬 Conversas")
 
 
+    # ========================================================
+    # LISTA DE CONVERSAS
+    # ========================================================
 
     for chat_id in list(
         st.session_state.chats.keys()
@@ -642,6 +747,9 @@ with st.sidebar:
     st.subheader("🧠 Memória")
 
 
+    # ========================================================
+    # MOSTRAR MEMÓRIAS
+    # ========================================================
 
     memorias = carregar_memorias()
 
@@ -660,6 +768,9 @@ with st.sidebar:
         )
 
 
+# ============================================================
+# 14. CONVERSA ATUAL
+# ============================================================
 
 current_chat_id = (
     st.session_state.active_chat_id
@@ -670,11 +781,18 @@ messages = (
 )
 
 
+# ============================================================
+# 15. TÍTULO
+# ============================================================
 
 st.title(
     f"🤖 ORION AI - {current_chat_id}"
 )
 
+
+# ============================================================
+# 16. MOSTRAR HISTÓRICO
+# ============================================================
 
 for message in messages:
 
@@ -689,15 +807,22 @@ for message in messages:
             )
 
 
+# ============================================================
+# 17. ENTRADA DO USUÁRIO
+# ============================================================
+
+# ============================================================
+# 16.1. ENTRADA DE VOZ CONTÍNUA + CHAT POR TEXTO
+# ============================================================
 
 st.caption(
-    "🎙️ Para falar com o ORION, grave uma mensagem abaixo. "
-    "A gravação será transcrita pela API de áudio da Groq."
+    "🎙️ Ative o microfone e fale normalmente. O ORION detecta o fim da fala, "
+    "transcreve automaticamente e responde pela Cartesia. O chat por texto continua disponível."
 )
 
-audio_voz = st.audio_input(
-    "Gravar mensagem de voz",
-    key="orion_audio_input",
+voice_result = orion_voice_listener(
+    key="orion_voice_listener",
+    default={"text": "", "nonce": 0, "enabled": False},
 )
 
 prompt_texto = st.chat_input(
@@ -705,39 +830,37 @@ prompt_texto = st.chat_input(
 )
 
 voice_prompt = None
+if isinstance(voice_result, dict):
+    received_text = str(voice_result.get("text", "")).strip()
+    received_nonce = voice_result.get("nonce", 0)
 
-if audio_voz is not None:
-    audio_bytes = audio_voz.getvalue()
-    audio_hash = __import__("hashlib").sha256(audio_bytes).hexdigest()
+    # Processa cada fala apenas uma vez, mesmo que o Streamlit faça rerun.
+    if received_text and received_nonce != st.session_state.get("last_orion_voice_nonce"):
+        st.session_state.last_orion_voice_nonce = received_nonce
+        voice_prompt = received_text
 
-    if audio_hash != st.session_state.get("last_orion_audio_hash"):
-        st.session_state.last_orion_audio_hash = audio_hash
-        try:
-            transcricao = client.audio.transcriptions.create(
-                file=("orion_audio.wav", audio_bytes),
-                model="whisper-large-v3-turbo",
-                language="pt",
-                response_format="text",
-            )
-            voice_prompt = str(transcricao).strip()
-            if voice_prompt:
-                st.success(f"🎙️ Voz reconhecida: {voice_prompt}")
-            else:
-                st.warning("Não consegui reconhecer palavras nessa gravação.")
-        except Exception as e:
-            st.error(f"Não consegui transcrever o áudio: {e}")
-
+# Texto digitado tem prioridade se o usuário enviar texto ao mesmo tempo.
 prompt = prompt_texto or voice_prompt
 
 
+# ============================================================
+# 18. PROCESSAR MENSAGEM
+# ============================================================
+
 if prompt:
 
-
+    # ========================================================
+    # MOSTRAR MENSAGEM DO USUÁRIO
+    # ========================================================
 
     with st.chat_message("user"):
 
         st.markdown(prompt)
 
+
+    # ========================================================
+    # SALVAR MENSAGEM
+    # ========================================================
 
     messages.append({
 
@@ -748,6 +871,9 @@ if prompt:
     })
 
 
+    # ========================================================
+    # 19. DETECTAR O NOME DO USUÁRIO
+    # ========================================================
 
     prompt_lower = prompt.lower()
 
@@ -799,16 +925,25 @@ if prompt:
             break
 
 
+    # ========================================================
+    # 20. DATA E HORA ATUAIS
+    # ========================================================
 
     data_atual, hora_atual = (
         obter_data_hora()
     )
 
 
+    # ========================================================
+    # 21. CARREGAR MEMÓRIA
+    # ========================================================
 
     memoria = criar_contexto_memoria()
 
 
+    # ========================================================
+    # 22. PREPARAR MENSAGENS
+    # ========================================================
 
     mensagens_para_ia = [
 
@@ -891,12 +1026,18 @@ if prompt:
     ]
 
 
+    # ========================================================
+    # 23. ADICIONAR HISTÓRICO
+    # ========================================================
 
     mensagens_para_ia.extend(
         messages[1:]
     )
 
 
+    # ========================================================
+    # 24. CONFIGURAÇÃO DA GROQ
+    # ========================================================
 
     parametros = {
 
@@ -919,6 +1060,10 @@ if prompt:
     }
 
 
+    # ========================================================
+    # 25. GERAR RESPOSTA
+    # ========================================================
+
     with st.chat_message("assistant"):
 
         try:
@@ -933,7 +1078,10 @@ if prompt:
             )
 
 
-         
+            # =================================================
+            # PEGAR RESPOSTA
+            # =================================================
+
             response = (
                 completion
                 .choices[0]
@@ -942,7 +1090,9 @@ if prompt:
             )
 
 
-           
+            # =================================================
+            # VERIFICAR RESPOSTA VAZIA
+            # =================================================
 
             if not response:
 
@@ -952,15 +1102,23 @@ if prompt:
                 )
 
 
-        
+            # =================================================
+            # MOSTRAR RESPOSTA
+            # =================================================
 
             st.markdown(response)
 
 
-        
+            # =================================================
+            # BOTÕES DE VOZ
+            # =================================================
 
             falar_texto(response, st.session_state.persona)
 
+
+            # =================================================
+            # SALVAR RESPOSTA NA CONVERSA
+            # =================================================
 
             messages.append({
 
