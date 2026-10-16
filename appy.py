@@ -7,8 +7,6 @@ from cartesia import Cartesia
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from pathlib import Path
-import streamlit.components.v1 as components
 
 
 # ============================================================
@@ -21,17 +19,6 @@ st.set_page_config(
     layout="wide"
 )
 
-
-
-# ============================================================
-# COMPONENTE DE ESCUTA CONTÍNUA DO ORION
-# ============================================================
-
-ORION_COMPONENT_DIR = Path(__file__).parent / "orion_voice_component"
-orion_voice_listener = components.declare_component(
-    "orion_voice_listener",
-    path=str(ORION_COMPONENT_DIR),
-)
 
 
 
@@ -812,17 +799,17 @@ for message in messages:
 # ============================================================
 
 # ============================================================
-# 16.1. ENTRADA DE VOZ CONTÍNUA + CHAT POR TEXTO
+# 16.1. ENTRADA DE VOZ SEM COMPONENTE PERSONALIZADO
 # ============================================================
 
 st.caption(
-    "🎙️ Ative o microfone e fale normalmente. O ORION detecta o fim da fala, "
-    "transcreve automaticamente e responde pela Cartesia. O chat por texto continua disponível."
+    "🎙️ Para falar com o ORION, grave uma mensagem abaixo. "
+    "A gravação será transcrita pela API de áudio da Groq."
 )
 
-voice_result = orion_voice_listener(
-    key="orion_voice_listener",
-    default={"text": "", "nonce": 0, "enabled": False},
+audio_voz = st.audio_input(
+    "Gravar mensagem de voz",
+    key="orion_audio_input",
 )
 
 prompt_texto = st.chat_input(
@@ -830,16 +817,30 @@ prompt_texto = st.chat_input(
 )
 
 voice_prompt = None
-if isinstance(voice_result, dict):
-    received_text = str(voice_result.get("text", "")).strip()
-    received_nonce = voice_result.get("nonce", 0)
 
-    # Processa cada fala apenas uma vez, mesmo que o Streamlit faça rerun.
-    if received_text and received_nonce != st.session_state.get("last_orion_voice_nonce"):
-        st.session_state.last_orion_voice_nonce = received_nonce
-        voice_prompt = received_text
+if audio_voz is not None:
+    audio_bytes = audio_voz.getvalue()
+    audio_hash = __import__("hashlib").sha256(audio_bytes).hexdigest()
 
-# Texto digitado tem prioridade se o usuário enviar texto ao mesmo tempo.
+    # Evita processar a mesma gravação novamente em cada rerun do Streamlit.
+    if audio_hash != st.session_state.get("last_orion_audio_hash"):
+        st.session_state.last_orion_audio_hash = audio_hash
+        try:
+            transcricao = client.audio.transcriptions.create(
+                file=("orion_audio.wav", audio_bytes),
+                model="whisper-large-v3-turbo",
+                language="pt",
+                response_format="text",
+            )
+            voice_prompt = str(transcricao).strip()
+            if voice_prompt:
+                st.success(f"🎙️ Voz reconhecida: {voice_prompt}")
+            else:
+                st.warning("Não consegui reconhecer palavras nessa gravação.")
+        except Exception as e:
+            st.error(f"Não consegui transcrever o áudio: {e}")
+
+# A mensagem digitada tem prioridade; caso contrário, usa a transcrição.
 prompt = prompt_texto or voice_prompt
 
 
