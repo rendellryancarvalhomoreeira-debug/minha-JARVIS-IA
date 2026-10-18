@@ -104,17 +104,12 @@ def falar_texto(texto, persona="🤖 ORION"):
             f"estão corretos nos Secrets. Detalhes: {erro}"
         )
 
-    finally:
+       finally:
         if caminho_audio and os.path.exists(caminho_audio):
-            os.remove(caminho_audio)
-)
-finally:
-if caminho_audio and os.path.exists(caminho_audio):
-try:
-os.remove(caminho_audio)
-except OSError:
-pass
-
+            try:
+                os.remove(caminho_audio)
+            except OSError:
+                pass
 
 # ============================================================
 # 3. CONEXÃO COM O SUPABASE
