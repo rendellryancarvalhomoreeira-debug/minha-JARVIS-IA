@@ -52,55 +52,61 @@ def limpar_texto_para_voz(texto):
 
 
 
-def falar_texto(texto, persona="🔭 ORION"):
-"""Gera voz com a Cartesia e exibe o áudio no Streamlit."""
-texto_limpo = limpar_texto_para_voz(texto)
-if not texto_limpo:
-return
 
-api_key = st.secrets.get("CARTESIA_API_KEY", "")
-voice_id = st.secrets.get("CARTESIA_VOICE_ID", "")
+def falar_texto(texto, persona="🤖 ORION"):
+    """Gera voz com a Cartesia e exibe o áudio no Streamlit."""
+    texto_limpo = limpar_texto_para_voz(texto)
+    if not texto_limpo:
+        return
 
-if not api_key:
-st.warning("Configure CARTESIA_API_KEY nos Secrets do Streamlit para ativar a voz do ORION.")
-return
+    api_key = st.secrets.get("CARTESIA_API_KEY", "")
+    voice_id = st.secrets.get("CARTESIA_VOICE_ID", "")
 
-if not voice_id:
-st.info(
-"A chave da Cartesia está configurada. Falta escolher a voz no Playground e "
-"adicionar CARTESIA_VOICE_ID aos Secrets do Streamlit."
-)
-return
+    if not api_key:
+        st.warning("Configure CARTESIA_API_KEY nos Secrets do Streamlit para ativar a voz do ORION.")
+        return
 
-caminho_audio = None
-try:
-with Cartesia(api_key=api_key) as cartesia_client:
-audio = cartesia_client.tts.generate(
-model_id="sonic-3.6",
-transcript=texto_limpo,
-voice=voice_id,
-language="pt",
-output_format={
-"container": "wav",
-"encoding": "pcm_s16le",
-"sample_rate": 44100,
-},
-)
+    if not voice_id:
+        st.info(
+            "A chave da Cartesia está configurada. Falta escolher a voz no Playground e "
+            "adicionar CARTESIA_VOICE_ID aos Secrets do Streamlit."
+        )
+        return
 
-with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as arquivo:
-caminho_audio = arquivo.name
+    caminho_audio = None
+    try:
+        with Cartesia(api_key=api_key) as cartesia_client:
+            audio = cartesia_client.tts.generate(
+                model_id="sonic-3.6",
+                transcript=texto_limpo,
+                voice=voice_id,
+                language="pt",
+                output_format={
+                    "container": "wav",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 44100,
+                },
+            )
 
-audio.write_to_file(caminho_audio)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as arquivo:
+                caminho_audio = arquivo.name
 
-with open(caminho_audio, "rb") as arquivo:
-audio_bytes = arquivo.read()
+            audio.write_to_file(caminho_audio)
 
-st.audio(audio_bytes, format="audio/wav", autoplay=True)
+        with open(caminho_audio, "rb") as arquivo:
+            audio_bytes = arquivo.read()
 
-except Exception as erro:
-st.error(
-"Não consegui gerar a voz pela Cartesia. Confira se a chave e o ID da voz "
-f"estão corretos nos Secrets. Detalhes: {erro}"
+        st.audio(audio_bytes, format="audio/wav", autoplay=True)
+
+    except Exception as erro:
+        st.error(
+            "Não consegui gerar a voz pela Cartesia. Confira se a chave e o ID da voz "
+            f"estão corretos nos Secrets. Detalhes: {erro}"
+        )
+
+    finally:
+        if caminho_audio and os.path.exists(caminho_audio):
+            os.remove(caminho_audio)
 )
 finally:
 if caminho_audio and os.path.exists(caminho_audio):
