@@ -36,18 +36,20 @@ api_key=st.secrets["GROQ_API_KEY"]
 # ============================================================
 
 
-def limpar_texto_para_voz(texto):
-"""Remove marcações Markdown que não devem ser pronunciadas."""
-if not texto:
-return ""
 
-texto = str(texto)
-texto = re.sub(r"```[\s\S]*?```", " trecho de código omitido. ", texto)
-texto = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", texto)
-texto = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", texto)
-texto = re.sub(r"[*_~`#]", "", texto)
-texto = re.sub(r"\s+", " ", texto).strip()
-return texto
+def limpar_texto_para_voz(texto):
+    """Remove marcações Markdown que não devem ser pronunciadas."""
+    if not texto:
+        return ""
+
+    texto = str(texto)
+    texto = re.sub(r"```[\s\S]*?```", " trecho de código omitido. ", texto)
+    texto = re.sub(r"[\*_`]+", "", texto)
+    texto = re.sub(r"(?:^|\n)\s{0,3}#{1,6}\s+", "", texto)
+    texto = re.sub(r"^[ \t]*[-*#]+\s*", "", texto)
+    texto = re.sub(r"\s+", " ", texto).strip()
+    return texto
+
 
 
 def falar_texto(texto, persona="🔭 ORION"):
