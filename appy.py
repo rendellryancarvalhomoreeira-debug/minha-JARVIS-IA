@@ -104,7 +104,7 @@ def falar_texto(texto, persona="🤖 ORION"):
             f"estão corretos nos Secrets. Detalhes: {erro}"
         )
 
-       finally:
+         finally:
         if caminho_audio and os.path.exists(caminho_audio):
             try:
                 os.remove(caminho_audio)
