@@ -23,33 +23,49 @@ st.set_page_config(
 
 
 def renderizar_resposta(texto):
-    """Corrige delimitadores matemáticos comuns antes de renderizar Markdown."""
+    """Renderiza Markdown e detecta fórmulas isoladas para exibi-las como matemática."""
     if not texto:
-        st.markdown("")
         return
 
-    texto = str(texto)
-    linhas = texto.splitlines()
+    texto = str(texto).replace("\r\n", "\n").replace("\r", "\n")
+    linhas = texto.split("\n")
+    bloco_markdown = []
 
-    # Fórmulas isoladas entre colchetes: [x^2 - 5x + 6 = 0]
-    for i, linha in enumerate(linhas):
+    def descarregar_markdown():
+        if bloco_markdown:
+            st.markdown("\n".join(bloco_markdown))
+            bloco_markdown.clear()
+
+    for linha in linhas:
         limpa = linha.strip()
-        if (
+        formula = None
+
+        # Delimitadores matemáticos LaTeX convencionais: \[ ... \] e $$ ... $$.
+        if limpa.startswith(r"\[") and limpa.endswith(r"\]"):
+            formula = limpa[2:-2].strip()
+        elif limpa.startswith("$$") and limpa.endswith("$$") and len(limpa) > 4:
+            formula = limpa[2:-2].strip()
+        # Muitos modelos enviam fórmulas sozinhas entre colchetes comuns.
+        elif (
             len(limpa) >= 3
             and limpa.startswith("[")
             and limpa.endswith("]")
-            and any(sinal in limpa for sinal in ("=", "^", "\\", "√", "∑", "∫"))
-            and not limpa.startswith("[http")
+            and any(sinal in limpa for sinal in ("=", "^", "\\", "√", "∑", "∫", "≤", "≥"))
+            and not limpa.startswith(("[http", "[www."))
         ):
-            linhas[i] = "$$" + limpa[1:-1].strip() + "$$"
+            formula = limpa[1:-1].strip()
 
-    texto = "\n".join(linhas)
+        if formula:
+            descarregar_markdown()
+            # st.latex faz o Streamlit renderizar a expressão, em vez de exibir comandos como \sqrt.
+            st.latex(formula)
+            continue
 
-    # Expressões entre parênteses que contêm comandos LaTeX viram matemática inline.
-    padrao = r"\(([^()\n]*\\(?:Rightarrow|rightarrow|times|cdot|frac|sqrt|neq|leq|geq|approx|pm)[^()\n]*)\)"
-    texto = re.sub(padrao, lambda m: "$" + m.group(1).strip() + "$", texto)
+        # Converte fórmulas inline escritas como \( ... \) para a sintaxe matemática do Markdown.
+        linha = re.sub(r"\\\((.+?)\\\)", lambda m: "$" + m.group(1).strip() + "$", linha)
+        bloco_markdown.append(linha)
 
-    st.markdown(texto)
+    descarregar_markdown()
 
 
 # ============================================================
@@ -993,6 +1009,9 @@ if prompt:
                 "de maneira semelhante a um assistente "
                 "pessoal sofisticado. "
 
+                "Ao escrever matemática, use delimitadores LaTeX compatíveis com Markdown: "
+                "fórmulas isoladas entre $$ ... $$ e expressões dentro de frases entre $ ... $. "
+                "Não coloque fórmulas entre colchetes comuns [ ... ] e não deixe comandos LaTeX soltos. "
                 "Responda sempre em português do Brasil, "
                 "a menos que o usuário peça outro idioma. "
 
