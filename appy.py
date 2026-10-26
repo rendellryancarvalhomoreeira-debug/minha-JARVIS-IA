@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 # ============================================================
 
 st.set_page_config(
-    page_title="ORION AI — Pesquisa Avançada",
+    page_title="ORION AI — Inteligência Contextual",
     page_icon="🤖",
     layout="wide"
 )
@@ -239,9 +239,45 @@ TERMOS_PESQUISA = (
 
 
 def precisa_pesquisar(texto):
-    """Heurística conservadora: identifica pedidos explícitos ou fatos potencialmente atuais."""
+    """Detecta pedidos explícitos e assuntos que normalmente exigem dados atuais."""
     texto = (texto or "").lower().strip()
     return any(termo in texto for termo in TERMOS_PESQUISA)
+
+
+def detectar_pergunta_de_acompanhamento(texto):
+    """Detecta acompanhamentos curtos que dependem do tema já discutido."""
+    texto = (texto or "").lower().strip()
+    sinais = (
+        "e isso", "e ele", "e ela", "e eles", "e elas", "e nesse caso",
+        "e nesse", "e quando", "e onde", "e por que", "e porque", "e como",
+        "qual deles", "qual delas", "quais deles", "quais delas", "mais detalhes",
+        "explique melhor", "continue", "continua", "e as fontes", "e a fonte",
+        "e a data", "quando foi isso", "isso ainda", "ele ainda", "ela ainda",
+        "qual a chance", "quais as vantagens", "quais as desvantagens"
+    )
+    return len(texto.split()) <= 12 and any(sinal in texto for sinal in sinais)
+
+
+def contexto_recente_contem_pesquisa(historico):
+    """Verifica se o contexto recente tratava de pesquisa ou de fatos atuais."""
+    trechos = [
+        str(m.get("content", ""))
+        for m in historico[-8:]
+        if m.get("role") in ("user", "assistant")
+    ]
+    texto = " ".join(trechos).lower()
+    return any(termo in texto for termo in TERMOS_PESQUISA) or any(
+        termo in texto for termo in ("fonte:", "fontes:", "http://", "https://", "notícias de hoje", "lançamento recente")
+    )
+
+
+def escolher_estrategia_pesquisa(prompt, historico, ativada):
+    """Pesquisa explicitamente solicitada, necessária por atualidade ou herdada do contexto."""
+    if not ativada:
+        return False
+    if precisa_pesquisar(prompt):
+        return True
+    return detectar_pergunta_de_acompanhamento(prompt) and contexto_recente_contem_pesquisa(historico)
 
 
 def montar_instrucao_pesquisa(ativada, pesquisa_obrigatoria):
@@ -948,6 +984,7 @@ messages = (
 st.title(
     f"🤖 ORION AI - {current_chat_id}"
 )
+st.caption("🧠 Inteligência contextual ativa: o ORION considera o histórico e decide quando a pesquisa é necessária.")
 
 
 # ============================================================
@@ -1121,7 +1158,11 @@ if prompt:
     # ========================================================
 
     pesquisa_ativada = bool(st.session_state.get("pesquisa_avancada", True))
-    pesquisa_obrigatoria = pesquisa_ativada and precisa_pesquisar(prompt)
+    pesquisa_obrigatoria = escolher_estrategia_pesquisa(
+        prompt,
+        messages[:-1],
+        pesquisa_ativada,
+    )
     instrucao_pesquisa = montar_instrucao_pesquisa(pesquisa_ativada, pesquisa_obrigatoria)
 
     mensagens_para_ia = [
@@ -1139,12 +1180,15 @@ if prompt:
                 + instrucao_pesquisa
                 + " "
 
+                "INTELIGÊNCIA CONTEXTUAL — ETAPA 3: interprete a mensagem atual junto com o histórico recente. "
+                "Resolva referências como 'isso', 'ele', 'ela', 'aquele' e perguntas de acompanhamento usando o contexto; "
+                "não peça ao usuário para repetir informações que já estejam claras na conversa. "
+                "Se houver duas interpretações plausíveis que mudem significativamente a resposta, faça uma pergunta curta. "
                 "PADRÃO DE QUALIDADE: compreenda a intenção antes de responder; "
-                "use o contexto da conversa; se faltarem dados essenciais, faça uma pergunta objetiva; "
-                "não invente fatos, fontes, capacidades, testes ou ações realizadas; "
-                "quando houver incerteza, diga o que é conhecido e o que não é; "
-                "organize respostas complexas em etapas e adapte o nível de detalhe ao pedido. "
-                "Para tarefas técnicas, prefira soluções seguras, testáveis e reversíveis. "
+                "se faltarem dados essenciais, faça uma pergunta objetiva; não invente fatos, fontes, capacidades, testes ou ações realizadas; "
+                "quando houver incerteza, diga o que é conhecido e o que não é; organize respostas complexas em etapas e adapte o detalhe ao pedido. "
+                "Responda brevemente a pedidos simples, aprofunde quando solicitado ou quando a complexidade exigir, e evite repetir o mesmo ponto. "
+                "Para tarefas técnicas, prefira soluções seguras, testáveis e reversíveis. Nunca afirme que uma ferramenta foi usada sem que tenha sido chamada. "
 
                 "Você é um assistente virtual avançado, "
                 "inteligente, prestativo, educado e natural. "
