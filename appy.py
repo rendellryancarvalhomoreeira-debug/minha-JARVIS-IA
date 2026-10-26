@@ -1258,7 +1258,6 @@ if prompt:
         ],
 
         "tool_choice": "required" if pesquisa_obrigatoria else "auto",
-        "citation_options": "enabled",
         "reasoning_effort": "low"
 
     }
