@@ -1247,7 +1247,9 @@ if prompt:
 
         "messages": mensagens_para_ia,
 
-        "temperature": 0.7,
+        # A busca integrada da Groq funciona melhor com temperatura 1
+        # conforme a documentação oficial do browser_search.
+        "temperature": 1,
 
         "tools": [
 
@@ -1271,14 +1273,37 @@ if prompt:
 
         try:
 
-            completion = (
-                client
-                .chat
-                .completions
-                .create(
-                    **parametros
-                )
-            )
+            try:
+                completion = client.chat.completions.create(**parametros)
+            except Exception as erro_busca:
+                # Em perguntas que exigem pesquisa, alguns pedidos podem falhar
+                # se o modelo gerar texto em vez de iniciar a ferramenta. Tenta
+                # uma vez novamente com uma instrução explícita e contexto enxuto.
+                erro_texto = str(erro_busca).lower()
+                if pesquisa_obrigatoria and (
+                    "tool choice is required" in erro_texto
+                    or "tool_use_failed" in erro_texto
+                    or "failed_generation" in erro_texto
+                ):
+                    mensagens_retry = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Pesquise na internet usando a ferramenta browser_search antes de responder. "
+                                "Não responda com conhecimento prévio nem invente resultados. "
+                                "Depois da busca, resuma os achados em português e indique as fontes disponíveis. "
+                                "Se não conseguir pesquisar, informe claramente que a pesquisa falhou."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ]
+                    parametros_retry = dict(parametros)
+                    parametros_retry["messages"] = mensagens_retry
+                    parametros_retry["temperature"] = 1
+                    parametros_retry["tool_choice"] = "required"
+                    completion = client.chat.completions.create(**parametros_retry)
+                else:
+                    raise
 
 
             # =================================================
