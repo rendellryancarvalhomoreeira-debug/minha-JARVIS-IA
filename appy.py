@@ -8,6 +8,8 @@ from cartesia import Cartesia
 from supabase import create_client
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from urllib.parse import quote_plus
+import unicodedata
 
 
 # ============================================================
@@ -991,7 +993,7 @@ st.caption("🧠 Inteligência contextual ativa: o ORION considera o histórico 
 # 16. MOSTRAR HISTÓRICO
 # ============================================================
 
-for message in messages:
+for indice_mensagem, message in enumerate(messages):
 
     if message["role"] != "system":
 
@@ -1001,8 +1003,95 @@ for message in messages:
 
             if message["role"] == "assistant":
                 renderizar_resposta(message["content"])
+                if message.get("action_url"):
+                    st.link_button(
+                        message.get("action_label", "Abrir página"),
+                        message["action_url"],
+                        key=f"acao_historico_{current_chat_id}_{indice_mensagem}",
+                    )
             else:
                 st.markdown(message["content"])
+
+
+# ============================================================
+# 16.2. ETAPA 5.1 — INTERPRETADOR SEGURO DE COMANDOS WEB
+# ============================================================
+
+SITES_AUTORIZADOS = {
+    "youtube": ("YouTube", "https://www.youtube.com"),
+    "google": ("Google", "https://www.google.com"),
+    "github": ("GitHub", "https://github.com"),
+    "gmail": ("Gmail", "https://mail.google.com"),
+    "wikipedia": ("Wikipédia", "https://pt.wikipedia.org"),
+    "streamlit": ("Streamlit", "https://streamlit.io"),
+    "lovable": ("Lovable", "https://lovable.dev"),
+    "supabase": ("Supabase", "https://supabase.com"),
+    "chatgpt": ("ChatGPT", "https://chatgpt.com"),
+}
+
+
+def normalizar_comando(texto):
+    """Padroniza acentos, espaços e caixa sem executar código recebido."""
+    texto = unicodedata.normalize("NFKD", str(texto or ""))
+    texto = "".join(caractere for caractere in texto if not unicodedata.combining(caractere))
+    return re.sub(r"\s+", " ", texto.lower()).strip().rstrip(".!?")
+
+
+def interpretar_comando_web(texto):
+    """Reconhece apenas comandos web permitidos; nunca executa shell ou código arbitrário."""
+    comando = normalizar_comando(texto)
+
+    # Pesquisa direta no Google é explícita para não roubar os pedidos de pesquisa
+    # avançada que devem continuar sendo tratados pela IA/Groq.
+    busca = re.match(
+        r"^(?:orion[, ]+)?(?:pesquise|pesquisar|procure|procurar)\s+(?:no google|no navegador)\s+(?:por|sobre|a respeito de)\s+(.+)$",
+        comando,
+    )
+    if busca:
+        consulta = busca.group(1).strip()
+        if consulta:
+            return {
+                "title": "Pesquisa no Google",
+                "url": "https://www.google.com/search?q=" + quote_plus(consulta),
+                "label": "Abrir pesquisa no Google",
+                "description": f"Pesquisa pronta para abrir no navegador: {consulta}",
+            }
+
+    abrir = re.match(
+        r"^(?:orion[, ]+)?(?:abra|abrir|acesse|acessar|visite|visitar|va para|ir para|entre em)\s+(.+)$",
+        comando,
+    )
+    if not abrir:
+        return None
+
+    destino = abrir.group(1).strip()
+    destino = re.sub(r"^(?:o site do|o site da|site do|site da|o|a|os|as)\s+", "", destino)
+    destino = destino.replace(".com.br", "").replace(".com", "")
+    destino = re.sub(r"[^a-z0-9 ]", "", destino).strip()
+    destino_compacto = destino.replace(" ", "")
+
+    aliases = {
+        "youtube": "youtube", "yt": "youtube",
+        "google": "google",
+        "github": "github", "git hub": "github",
+        "gmail": "gmail",
+        "wikipedia": "wikipedia", "wikipédia": "wikipedia", "wiki": "wikipedia",
+        "streamlit": "streamlit",
+        "lovable": "lovable",
+        "supabase": "supabase",
+        "chatgpt": "chatgpt", "chat gpt": "chatgpt",
+    }
+    chave = aliases.get(destino) or aliases.get(destino_compacto)
+    if not chave:
+        return None
+
+    titulo, url = SITES_AUTORIZADOS[chave]
+    return {
+        "title": titulo,
+        "url": url,
+        "label": f"Abrir {titulo}",
+        "description": f"Comando reconhecido. Confirme clicando abaixo para abrir {titulo}.",
+    }
 
 
 # ============================================================
@@ -1025,6 +1114,10 @@ audio_voz = st.audio_input(
 
 prompt_texto = st.chat_input(
     "Digite sua mensagem para o ORION..."
+)
+st.caption(
+    "🖥️ Etapa 5.1: experimente comandos como “abra o YouTube”, “abra o GitHub” "
+    "ou “pesquise no Google por Python”. A abertura exige clicar no botão de confirmação."
 )
 
 voice_prompt = None
@@ -1081,6 +1174,30 @@ if prompt:
         "content": prompt
 
     })
+
+
+    # ========================================================
+    # 18.1. EXECUTAR COMANDO WEB APÓS CONFIRMAÇÃO DO USUÁRIO
+    # ========================================================
+
+    acao_web = interpretar_comando_web(prompt)
+    if acao_web:
+        resposta_comando = (
+            f"🖥️ **Etapa 5.1 — Controle por comandos**\n\n"
+            f"{acao_web['description']}\n\n"
+            "Por segurança, o ORION não abre páginas silenciosamente: use o botão para confirmar. "
+            "Nesta fase, ele controla links do navegador, não aplicativos locais do Chromebook."
+        )
+        with st.chat_message("assistant"):
+            st.markdown(resposta_comando)
+            st.link_button(acao_web["label"], acao_web["url"])
+        messages.append({
+            "role": "assistant",
+            "content": resposta_comando,
+            "action_url": acao_web["url"],
+            "action_label": acao_web["label"],
+        })
+        st.stop()
 
 
     # ========================================================
