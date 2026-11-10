@@ -3,6 +3,8 @@ import re
 import os
 import json
 import tempfile
+import time
+import hashlib
 from groq import Groq
 from cartesia import Cartesia
 from supabase import create_client
@@ -76,9 +78,13 @@ def renderizar_resposta(texto):
 # 2. CONEXÃO COM A GROQ
 # ============================================================
 
-client = Groq(
-    api_key=st.secrets["GROQ_API_KEY"]
-)
+@st.cache_resource(show_spinner=False)
+def obter_cliente_groq(api_key):
+    """Reutiliza o cliente stateless da Groq entre reruns e sessões."""
+    return Groq(api_key=api_key)
+
+
+client = obter_cliente_groq(st.secrets["GROQ_API_KEY"])
 
 
 # ============================================================
@@ -162,10 +168,23 @@ def falar_texto(texto, persona="🔭 ORION"):
 # 3. CONEXÃO COM O SUPABASE
 # ============================================================
 
-supabase = create_client(
-    st.secrets["SUPABASE_URL"],
-    st.secrets["SUPABASE_KEY"]
-)
+def obter_cliente_supabase():
+    """Mantém um cliente Supabase por sessão Streamlit, evitando compartilhar autenticação."""
+    url = st.secrets["SUPABASE_URL"]
+    chave = st.secrets["SUPABASE_KEY"]
+    fingerprint = hashlib.sha256(f"{url}|{chave}".encode("utf-8")).hexdigest()
+
+    if (
+        "_orion_supabase_client" not in st.session_state
+        or st.session_state.get("_orion_supabase_fingerprint") != fingerprint
+    ):
+        st.session_state["_orion_supabase_client"] = create_client(url, chave)
+        st.session_state["_orion_supabase_fingerprint"] = fingerprint
+
+    return st.session_state["_orion_supabase_client"]
+
+
+supabase = obter_cliente_supabase()
 
 
 # ============================================================
@@ -422,6 +441,13 @@ def limpar_login():
     st.session_state.pop("access_token", None)
     st.session_state.pop("refresh_token", None)
     st.session_state.pop("user", None)
+    st.session_state.pop("_orion_auth_validated_at", None)
+    st.session_state.pop("_orion_supabase_client", None)
+    st.session_state.pop("_orion_supabase_fingerprint", None)
+    st.session_state.pop("_orion_memorias_cache", None)
+    st.session_state.pop("_orion_memorias_cache_at", None)
+    st.session_state.pop("_orion_memorias_cache_user", None)
+    st.session_state.pop("_orion_semantic_cache", None)
 
 
 def fazer_login(email, senha):
@@ -506,39 +532,40 @@ def criar_conta(email, senha):
 # 7. RECUPERAR SESSÃO
 # ============================================================
 
+VALIDAR_SESSAO_A_CADA_SEGUNDOS = 300
+
 if (
     "access_token" in st.session_state
     and "refresh_token" in st.session_state
 ):
+    ultima_validacao = st.session_state.get("_orion_auth_validated_at", 0)
+    precisa_validar_sessao = (
+        "user" not in st.session_state
+        or (time.monotonic() - ultima_validacao) >= VALIDAR_SESSAO_A_CADA_SEGUNDOS
+    )
 
-    try:
-
-        resposta = supabase.auth.set_session(
-            st.session_state.access_token,
-            st.session_state.refresh_token
-        )
-
-        if resposta.session:
-
-            st.session_state.access_token = (
-                resposta.session.access_token
+    # Evita consultar a autenticação remotamente em todo rerun do Streamlit.
+    # A sessão continua sendo revalidada periodicamente e quando não há usuário carregado.
+    if precisa_validar_sessao:
+        try:
+            resposta = supabase.auth.set_session(
+                st.session_state.access_token,
+                st.session_state.refresh_token
             )
 
-            st.session_state.refresh_token = (
-                resposta.session.refresh_token
-            )
+            if resposta.session:
+                st.session_state.access_token = resposta.session.access_token
+                st.session_state.refresh_token = resposta.session.refresh_token
 
-        usuario_resposta = supabase.auth.get_user()
+            usuario_resposta = supabase.auth.get_user()
+            if usuario_resposta.user:
+                st.session_state.user = usuario_resposta.user
+                st.session_state["_orion_auth_validated_at"] = time.monotonic()
+            else:
+                limpar_login()
 
-        if usuario_resposta.user:
-
-            st.session_state.user = (
-                usuario_resposta.user
-            )
-
-    except Exception:
-
-        limpar_login()
+        except Exception:
+            limpar_login()
 
 
 # ============================================================
@@ -921,10 +948,24 @@ def analisar_memoria_semantica(nova_memoria, memorias_existentes):
         return {"acao": "nova", "motivo": "Comparação semântica indisponível; fallback tradicional."}
 
 
+MEMORIAS_CACHE_TTL_SEGUNDOS = 30
+
+
+def invalidar_cache_memorias():
+    """Invalida os dados e resultados semânticos após qualquer alteração."""
+    for chave in (
+        "_orion_memorias_cache",
+        "_orion_memorias_cache_at",
+        "_orion_memorias_cache_user",
+        "_orion_semantic_cache",
+    ):
+        st.session_state.pop(chave, None)
+
+
 def salvar_memoria(categoria, conteudo):
     """
-    Salva uma memória não sensível. A V3 aplica deduplicação local e semântica
-    antes de inserir ou atualizar registros do usuário atual.
+    Salva uma memória não sensível. Reutiliza a leitura em cache durante
+    a mesma sessão e invalida o cache depois de inserir/atualizar.
     """
     categoria = ALIASES_MEMORIA.get(
         str(categoria).strip().lower(),
@@ -944,7 +985,6 @@ def salvar_memoria(categoria, conteudo):
     memorias_existentes = carregar_memorias()
     alvo = normalizar_texto_memoria(conteudo)
 
-    # Primeiro, bloqueia duplicata exata ou quase idêntica, inclusive entre categorias.
     for memoria_existente in memorias_existentes:
         if normalizar_texto_memoria(memoria_existente.get("content", "")) == alvo:
             return False, "Essa informação já está na memória do ORION."
@@ -967,7 +1007,6 @@ def salvar_memoria(categoria, conteudo):
         if len(novo_conteudo) < 4 or contem_dado_sensivel(novo_conteudo):
             return False, "A atualização foi bloqueada por segurança. A memória antiga foi preservada."
 
-        # Atualiza apenas quando há identificador confiável do registro.
         memoria_id = memoria_antiga.get("id")
         if memoria_id is not None:
             try:
@@ -978,36 +1017,62 @@ def salvar_memoria(categoria, conteudo):
                     .eq("id", memoria_id)
                     .execute()
                 )
+                invalidar_cache_memorias()
                 return True, "Memória antiga atualizada com a informação mais recente."
             except Exception as erro:
                 print(f"Erro ao atualizar memória semântica: {erro}")
                 return False, "Não consegui atualizar a memória. O registro antigo foi preservado."
-        # Sem ID não fazemos exclusão/recriação: evitamos alterar o registro errado.
         return False, "Encontrei uma memória semelhante, mas não consegui identificá-la com segurança para atualizar."
 
     try:
-        supabase.table("memories").insert({
-            "user_id": user_id,
-            "category": categoria,
-            "content": conteudo,
-        }).execute()
+        (
+            supabase.table("memories")
+            .insert({
+                "user_id": user_id,
+                "category": categoria,
+                "content": conteudo,
+            })
+            .execute()
+        )
+        invalidar_cache_memorias()
         return True, "Nova memória salva com sucesso."
     except Exception as erro:
         print(f"Erro ao salvar memória: {erro}")
         return False, "Não consegui salvar a memória. Verifique a conexão com o Supabase."
 
 
-def carregar_memorias():
+def carregar_memorias(force_refresh=False):
+    """
+    Carrega apenas as colunas usadas pelo ORION e mantém cache isolado
+    por usuário durante 30 segundos nesta sessão Streamlit.
+    """
+    agora = time.monotonic()
+    cache_usuario = st.session_state.get("_orion_memorias_cache_user")
+    cache_at = st.session_state.get("_orion_memorias_cache_at", 0)
+    cache = st.session_state.get("_orion_memorias_cache")
+
+    if (
+        not force_refresh
+        and cache is not None
+        and cache_usuario == user_id
+        and (agora - cache_at) < MEMORIAS_CACHE_TTL_SEGUNDOS
+    ):
+        return [dict(item) for item in cache]
+
     try:
         resultado = (
             supabase
             .table("memories")
-            .select("*")
+            .select("id,category,content,created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .execute()
         )
-        return resultado.data or []
+        memorias = resultado.data or []
+        st.session_state["_orion_memorias_cache"] = [dict(item) for item in memorias]
+        st.session_state["_orion_memorias_cache_at"] = agora
+        st.session_state["_orion_memorias_cache_user"] = user_id
+        return [dict(item) for item in memorias]
     except Exception as erro:
         print(f"Erro ao carregar memórias: {erro}")
         return []
@@ -1024,11 +1089,11 @@ def excluir_memoria(categoria, conteudo):
             .eq("content", conteudo)
             .execute()
         )
+        invalidar_cache_memorias()
         return True
     except Exception as erro:
         print(f"Erro ao excluir memória: {erro}")
         return False
-
 
 def extrair_memorias_do_roteiro(texto):
     """Extrai uma lista de etapas apenas quando a mensagem identifica um roteiro pessoal do ORION."""
@@ -1228,7 +1293,28 @@ def pontuar_memoria(memoria, pergunta):
 
 
 def selecionar_memorias_semanticas(pergunta, memorias):
-    """Seleciona memórias por significado, inclusive quando a busca lexical já encontrou algo."""
+    """Seleciona memórias por significado e reutiliza resultados recentes da mesma consulta."""
+    assinatura_memorias = tuple(
+        (
+            str(item.get("id", "")),
+            str(item.get("created_at", "")),
+            str(item.get("content", "")),
+        )
+        for item in memorias[:40]
+    )
+    chave_cache = (
+        normalizar_texto_memoria(pergunta),
+        hashlib.sha256(repr(assinatura_memorias).encode("utf-8")).hexdigest(),
+    )
+    cache_semantico = st.session_state.get("_orion_semantic_cache", {})
+    entrada_cache = cache_semantico.get(chave_cache)
+    if entrada_cache and (time.monotonic() - entrada_cache["at"]) < 180:
+        indices_cache = entrada_cache.get("indices", [])
+        return [
+            memorias[i] for i in indices_cache
+            if isinstance(i, int) and 0 <= i < min(len(memorias), 40)
+        ]
+
     candidatas = [
         {
             "indice": indice,
@@ -1276,6 +1362,20 @@ def selecionar_memorias_semanticas(pergunta, memorias):
                     selecionadas.append(indice)
             if len(selecionadas) >= 8:
                 break
+        # Guarda apenas índices: a estrutura original das memórias permanece intacta.
+        cache_semantico = st.session_state.setdefault("_orion_semantic_cache", {})
+        cache_semantico[chave_cache] = {
+            "at": time.monotonic(),
+            "indices": selecionadas,
+        }
+        # Limita o cache para não crescer indefinidamente.
+        if len(cache_semantico) > 40:
+            mais_recentes = sorted(
+                cache_semantico.items(),
+                key=lambda item: item[1].get("at", 0),
+                reverse=True,
+            )[:30]
+            st.session_state["_orion_semantic_cache"] = dict(mais_recentes)
         return [memorias[indice] for indice in selecionadas]
     except Exception as erro:
         print(f"Recuperação semântica indisponível; usando fallback lexical: {erro}")
@@ -1367,6 +1467,86 @@ def criar_contexto_memoria(pergunta=""):
 
 
 # ============================================================
+# 10.1. LIMITES DE CONTEXTO PARA PROCESSAMENTO EFICIENTE
+# ============================================================
+
+HISTORICO_MAX_MENSAGENS_IA = 12
+HISTORICO_MAX_CARACTERES_IA = 14000
+
+
+def preparar_historico_para_ia(historico):
+    """
+    Mantém os turnos recentes no pedido à IA e respeita um limite de caracteres.
+    O histórico completo continua salvo e visível no Streamlit.
+    """
+    validas = [
+        {
+            "role": mensagem.get("role"),
+            "content": str(mensagem.get("content", "") or ""),
+        }
+        for mensagem in historico
+        if mensagem.get("role") in ("user", "assistant")
+    ]
+
+    recentes = validas[-HISTORICO_MAX_MENSAGENS_IA:]
+    # Se o corte começar no meio de um turno, descarta a resposta órfã mais antiga.
+    if recentes and recentes[0]["role"] == "assistant":
+        recentes = recentes[1:]
+
+    grupos_reversos = []
+    indice = len(recentes) - 1
+
+    # Agrupa user + assistant para evitar enviar respostas sem a pergunta correspondente.
+    while indice >= 0:
+        atual = recentes[indice]
+
+        if (
+            atual["role"] == "assistant"
+            and indice > 0
+            and recentes[indice - 1]["role"] == "user"
+        ):
+            grupo = [recentes[indice - 1], atual]
+            indice -= 2
+        elif atual["role"] == "user":
+            # A mensagem mais recente normalmente é a pergunta que acabou de chegar.
+            grupo = [atual]
+            indice -= 1
+        else:
+            grupo = [atual]
+            indice -= 1
+
+        grupos_reversos.append(grupo)
+
+    selecionadas_reverso = []
+    mensagens_usadas = 0
+    caracteres_usados = 0
+
+    for grupo in grupos_reversos:
+        total_grupo = sum(len(item["content"]) for item in grupo)
+
+        if mensagens_usadas + len(grupo) > HISTORICO_MAX_MENSAGENS_IA:
+            break
+
+        restante = HISTORICO_MAX_CARACTERES_IA - caracteres_usados
+        if total_grupo > restante:
+            # A pergunta atual é preservada mesmo se for longa; apenas o início
+            # de uma mensagem isolada pode ser cortado para respeitar o orçamento.
+            if not selecionadas_reverso and len(grupo) == 1 and restante > 0:
+                grupo[0]["content"] = grupo[0]["content"][-restante:]
+                selecionadas_reverso.append(grupo)
+            break
+
+        selecionadas_reverso.append(grupo)
+        mensagens_usadas += len(grupo)
+        caracteres_usados += total_grupo
+
+    resultado = []
+    for grupo in reversed(selecionadas_reverso):
+        resultado.extend(grupo)
+    return resultado
+
+
+# ============================================================
 # 11. CONVERSAS
 # ============================================================
 
@@ -1423,6 +1603,12 @@ with st.sidebar:
         help="Ativa a busca integrada da Groq para perguntas que realmente dependem de dados externos. Perguntas sobre suas memórias e projetos priorizam o Supabase, a menos que você peça uma pesquisa explicitamente."
     )
     st.caption("A busca pode consumir mais recursos e nem sempre encontra fontes suficientes.")
+
+    st.subheader("⚡ Processamento eficiente")
+    st.caption(
+        f"Contexto enviado à IA: até {HISTORICO_MAX_MENSAGENS_IA} mensagens recentes "
+        f"({HISTORICO_MAX_CARACTERES_IA:,} caracteres). O histórico completo continua disponível nesta conversa."
+    )
 
     st.subheader("🧠 Inteligência adaptativa")
     st.selectbox(
@@ -1573,8 +1759,19 @@ with st.sidebar:
             else:
                 st.warning(mensagem_memoria)
 
-    memorias = carregar_memorias()
-    st.caption(f"{len(memorias)} memória(s) armazenada(s) nesta conta.")
+    col_mem_info, col_mem_refresh = st.columns([4, 1])
+    with col_mem_refresh:
+        atualizar_memorias = st.button(
+            "↻",
+            key="atualizar_memorias_orion",
+            help="Atualizar a lista de memórias diretamente do Supabase.",
+        )
+    if atualizar_memorias:
+        memorias = carregar_memorias(force_refresh=True)
+    else:
+        memorias = carregar_memorias()
+    with col_mem_info:
+        st.caption(f"{len(memorias)} memória(s) armazenada(s) nesta conta.")
     with st.expander("Consultar e excluir memórias"):
         if not memorias:
             st.caption("Nenhuma memória armazenada.")
@@ -1929,112 +2126,28 @@ if prompt:
             "Não use pesquisa externa para preencher dados sobre o usuário."
         )
 
+    prompt_sistema = (
+        PERSONAS[st.session_state.persona]["prompt"]
+        + "\n\nMODO DE RESPOSTA: " + modo_resposta_atual
+        + "\n\nPESQUISA: " + instrucao_pesquisa
+        + "\n\nCONTEXTO E MEMÓRIA: interprete a mensagem atual com as mensagens recentes e a memória de longo prazo. "
+          "Resolva referências como 'isso', 'ele' e 'ela' usando o contexto disponível. "
+          "Em perguntas pessoais, use as memórias fornecidas; não substitua o projeto pessoal ORION por produtos de nome parecido. "
+          "Se a memória não contiver uma informação pessoal, admita que não a encontrou. "
+          "Nunca invente fatos pessoais, fontes, resultados de ferramentas ou ações realizadas."
+        + "\n\nQUALIDADE: responda em português brasileiro, salvo pedido diferente. "
+          "Seja direto em perguntas simples e detalhado quando necessário. "
+          "Em assuntos técnicos, priorize mudanças seguras, reversíveis e testáveis. "
+          "Se houver ambiguidade que altere significativamente a resposta, faça uma pergunta objetiva."
+        + "\n\nDATA E HORA: no Brasil, hoje é " + data_atual + " e são " + hora_atual + ". "
+          "Não invente data nem horário."
+        + "\n\nMATEMÁTICA: use LaTeX com \\( ... \\) em linha e $$ ... $$ em bloco. "
+          "Não deixe comandos LaTeX soltos nem envolva fórmulas apenas em colchetes comuns."
+    )
+
     mensagens_para_ia = [
-
-        {
-            "role": "system",
-
-            "content": (
-
-                PERSONAS[st.session_state.persona]["prompt"] + " "
-
-                "MODO DE RESPOSTA ATUAL: "
-                + modo_resposta_atual
-                + " "
-                + instrucao_pesquisa
-                + " "
-
-                "INTELIGÊNCIA CONTEXTUAL — ETAPA 3: interprete a mensagem atual junto com o histórico recente. "
-                "Resolva referências como 'isso', 'ele', 'ela', 'aquele' e perguntas de acompanhamento usando o contexto; "
-                "não peça ao usuário para repetir informações que já estejam claras na conversa. "
-                "Se houver duas interpretações plausíveis que mudem significativamente a resposta, faça uma pergunta curta. "
-                "REGRA DE MEMÓRIA PESSOAL V3: quando o usuário perguntar sobre si, seus planos, projetos, etapas ou conversas anteriores, "
-                "consulte primeiro a memória de longo prazo incluída no contexto. Não pesquise na internet para descobrir fatos pessoais. "
-                "Não troque o projeto pessoal ORION por produtos ou projetos públicos de nome parecido. "
-                "Se a memória não trouxer a informação, diga que não encontrou esse dado salvo; não invente um roteiro alternativo. "
-                "Se o usuário pedir explicitamente pesquisa na internet, siga o pedido sem confundir resultados externos com memórias pessoais. "
-                "PADRÃO DE QUALIDADE: compreenda a intenção antes de responder; "
-                "se faltarem dados essenciais, faça uma pergunta objetiva; não invente fatos, fontes, capacidades, testes ou ações realizadas; "
-                "quando houver incerteza, diga o que é conhecido e o que não é; organize respostas complexas em etapas e adapte o detalhe ao pedido. "
-                "Responda brevemente a pedidos simples, aprofunde quando solicitado ou quando a complexidade exigir, e evite repetir o mesmo ponto. "
-                "Para tarefas técnicas, prefira soluções seguras, testáveis e reversíveis. Nunca afirme que uma ferramenta foi usada sem que tenha sido chamada. "
-
-                "Você é um assistente virtual avançado, "
-                "inteligente, prestativo, educado e natural. "
-
-                "Seu objetivo é conversar com o usuário "
-                "de maneira semelhante a um assistente "
-                "pessoal sofisticado. "
-
-                "Ao escrever matemática, use delimitadores LaTeX compatíveis com Markdown: "
-                "fórmulas isoladas entre $$ ... $$ e expressões dentro de frases entre $ ... $. "
-                "Não coloque fórmulas entre colchetes comuns [ ... ] e não deixe comandos LaTeX soltos. "
-                "Responda sempre em português do Brasil, "
-                "a menos que o usuário peça outro idioma. "
-
-                "FORMATAÇÃO MATEMÁTICA: escreva fórmulas no meio do texto usando \\( ... \\) e equações isoladas usando $$ ... $$. Nunca envolva fórmulas apenas em colchetes comuns [ ... ]; use delimitadores matemáticos. Use LaTeX válido e explique os passos em texto normal. "
-
-                f"A data atual no Brasil é {data_atual}. "
-                f"O horário atual no Brasil é {hora_atual}. "
-
-                "Nunca invente a data ou o horário atual. "
-
-                "A ferramenta browser_search só estará disponível quando tiver sido habilitada para esta solicitação. "
-                "Quando a pergunta depender de informações atuais e a ferramenta estiver disponível, pesquise antes de responder. "
-                "Quando a pergunta tratar da vida, dos planos ou dos projetos pessoais do usuário, priorize a memória; "
-                "não substitua a memória pessoal por resultados externos, salvo quando o usuário pedir pesquisa explicitamente. "
-
-                "Isso inclui notícias, política atual, "
-                "presidentes, governadores, prefeitos, "
-                "eleições, resultados de jogos, preços, "
-                "cotações, clima, lançamentos, versões "
-                "de software, acontecimentos recentes "
-                "e informações sobre pessoas ou empresas "
-                "que possam ter mudado. "
-
-                "Perguntas de acompanhamento também "
-                "devem ser interpretadas considerando "
-                "o contexto da conversa anterior. "
-
-                "Por exemplo, se o usuário perguntar "
-                "'quem é o atual presidente?' e depois "
-                "perguntar 'qual a chance dele ser "
-                "reeleito?', entenda que 'dele' se refere "
-                "à pessoa mencionada anteriormente. "
-
-                "Quando a pergunta envolver uma previsão "
-                "ou probabilidade sobre um acontecimento "
-                "futuro, não invente uma porcentagem. "
-                "Explique os fatores relevantes e, quando "
-                "existirem pesquisas ou estimativas atuais, "
-                "consulte fontes recentes. "
-
-                "Não invente fontes, fatos, números ou "
-                "resultados de pesquisas. "
-
-                "Se a informação encontrada na internet "
-                "for insuficiente ou conflitante, deixe "
-                "isso claro para o usuário. "
-
-                "Se a pergunta não precisar de informações "
-                "atuais, responda normalmente sem realizar "
-                "uma pesquisa desnecessária. "
-
-                "Ao escrever fórmulas matemáticas, use Markdown/LaTeX corretamente: "
-                "fórmulas curtas entre $...$ e fórmulas em destaque entre $$...$$. "
-                "Nunca deixe comandos como \\Rightarrow ou \\times fora de delimitadores matemáticos. "
-                "Não envolva fórmulas em colchetes simples como [ ... ]."
-
-            )
-        },
-
-        {
-            "role": "system",
-
-            "content": memoria
-
-        }
-
+        {"role": "system", "content": prompt_sistema},
+        {"role": "system", "content": memoria},
     ]
 
 
@@ -2045,14 +2158,8 @@ if prompt:
     # O histórico visual pode conter metadados internos do ORION, como
     # action_url/action_label. A API da Groq aceita apenas campos válidos
     # de mensagem, então enviamos somente role/content para evitar HTTP 400.
-    mensagens_para_ia.extend(
-        {
-            "role": m["role"],
-            "content": m.get("content", ""),
-        }
-        for m in messages[1:]
-        if m.get("role") in ("user", "assistant")
-    )
+    historico_para_ia = preparar_historico_para_ia(messages[1:])
+    mensagens_para_ia.extend(historico_para_ia)
 
 
     # ========================================================
@@ -2084,6 +2191,7 @@ if prompt:
 
         try:
 
+            inicio_chamada_ia = time.perf_counter()
             try:
                 completion = client.chat.completions.create(**parametros)
             except Exception as erro_busca:
@@ -2140,6 +2248,27 @@ if prompt:
                     "uma resposta agora."
                 )
 
+
+            # =================================================
+            # MOSTRAR MÉTRICAS DE PROCESSAMENTO
+            # =================================================
+
+            duracao_ia = time.perf_counter() - inicio_chamada_ia
+            uso_tokens = getattr(completion, "usage", None)
+            if uso_tokens:
+                prompt_tokens = getattr(uso_tokens, "prompt_tokens", None)
+                completion_tokens = getattr(uso_tokens, "completion_tokens", None)
+                total_tokens = getattr(uso_tokens, "total_tokens", None)
+                partes_metricas = [f"⏱️ IA: {duracao_ia:.2f}s"]
+                if total_tokens is not None:
+                    partes_metricas.append(f"tokens: {total_tokens}")
+                elif prompt_tokens is not None or completion_tokens is not None:
+                    partes_metricas.append(
+                        f"entrada/saída: {prompt_tokens or 0}/{completion_tokens or 0} tokens"
+                    )
+                st.caption(" • ".join(partes_metricas))
+            else:
+                st.caption(f"⏱️ Tempo de resposta da IA: {duracao_ia:.2f}s")
 
             # =================================================
             # MOSTRAR RESPOSTA
