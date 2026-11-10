@@ -221,7 +221,7 @@ MODEL_NAME = "openai/gpt-oss-20b"
 MODELOS_MULTI_BRAIN = {
     "Groq": MODEL_NAME,
     "OpenAI": str(st.secrets.get("OPENAI_MODEL", "gpt-6.1-sol")),
-    "Gemini": str(st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")),
+    "Gemini": str(st.secrets.get("GEMINI_MODEL", "gemini-3.7-flash")),
     "Claude": str(st.secrets.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")),
 }
 
